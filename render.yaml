@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: aura-discord-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    autoDeploy: true
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
