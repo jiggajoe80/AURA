@@ -119,6 +119,8 @@ class AuraBot(discord.Client):
     def __init__(self):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
+
+        # state
         self.reminders = []
         self.presence_pool = []
         self.hourly_pool = []
@@ -128,15 +130,28 @@ class AuraBot(discord.Client):
         self.last_channel_activity = {}
         self.last_hourly_post = datetime.utcnow() - timedelta(hours=2)
         self.cooldowns = {}
-    
-       async def setup_hook(self):
-        # load modular extensions (cogs)
+
+    async def setup_hook(self):
+        """
+        Called by discord.py after login but before READY events.
+        Good place to load cogs (later phases) and sync slash commands.
+        """
+        # (Future) load cogs if present; guard in case we're still on Client
         for ext in INITIAL_EXTENSIONS:
             try:
-                await self.load_extension(ext)
-                logger.info(f"Loaded extension: {ext}")
+                loader = getattr(self, "load_extension", None)
+                if loader is not None:
+                    await loader(ext)
+                    logger.info(f"Loaded extension: {ext}")
             except Exception as e:
                 logger.exception(f"Failed to load {ext}: {e}")
+
+        # sync slash commands
+        try:
+            await self.tree.sync()
+            logger.info("Slash commands synced.")
+        except Exception as e:
+            logger.exception(f"Failed to sync slash commands: {e}")
 
         # sync slash commands
         try:
