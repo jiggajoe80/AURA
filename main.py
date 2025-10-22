@@ -24,6 +24,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger('Aura')
 
+# ---- Aura modular cogs ----
+INITIAL_EXTENSIONS = [
+    "cogs.reload_content",
+]
+# ----------------------------
+
 # ===== JSON DATA LOADING (Phase 1) =====
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = os.getenv("AURA_PRESENCE_FILE", "AURA.PRESENCE.v2.json")
@@ -123,10 +129,21 @@ class AuraBot(discord.Client):
         self.last_hourly_post = datetime.utcnow() - timedelta(hours=2)
         self.cooldowns = {}
     
-    async def setup_hook(self):
-        logger.info("Syncing commands...")
-        await self.tree.sync()
-        logger.info("Commands synced!")
+       async def setup_hook(self):
+        # load modular extensions (cogs)
+        for ext in INITIAL_EXTENSIONS:
+            try:
+                await self.load_extension(ext)
+                logger.info(f"Loaded extension: {ext}")
+            except Exception as e:
+                logger.exception(f"Failed to load {ext}: {e}")
+
+        # sync slash commands
+        try:
+            await self.tree.sync()
+            logger.info("Commands synced!")
+        except Exception as e:
+            logger.exception(f"Slash sync failed: {e}")
 
     def load_reminders(self):
         try:
