@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import logging
 import re
 import asyncio
+from pathlib import Path
 
 # --- added imports for keep-alive ---
 from flask import Flask
@@ -23,7 +24,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger('Aura')
 
-# --- keep-alive webserver (for Koyeb/Render health checks) ---
+# ===== JSON DATA LOADING (Phase 1) =====
+DATA_DIR = Path(__file__).parent / "data"
+PRESENCE_FILE = os.getenv("AURA_PRESENCE_FILE", "AURA.PRESENCE.v2.json")
+HOURLIES_FILE = os.getenv("AURA_HOURLIES_FILE", "AURA.HOURLIES.v2.json")
+
+def _load_items_from_json(filename: str):
+    """
+    Expect shape:
+    {
+      "type": "...",
+      "version": "v2",
+      "meta": {...},
+      "items": [ {"id":"...", "text":"..."}, ... ]
+    }
+    Returns [text, text, ...]
+    """
+    fp = DATA_DIR / filename
+    try:
+        with fp.open("r", encoding="utf-8") as f:
+            obj = json.load(f)
+        items = obj.get("items", [])
+        texts = [it["text"] for it in items if isinstance(it, dict) and isinstance(it.get("text"), str)]
+        if not texts:
+            raise ValueError("no usable 'text' entries in items[]")
+        logger.info(f"Loaded {len(texts)} lines from {fp.name}")
+        return texts
+    except Exception as e:
+        logger.warning(f"[WARN] Failed to load {fp.name}: {e}")
+        return []
+
+def load_presence_lines():
+    lines = _load_items_from_json(PRESENCE_FILE)
+    if not lines:
+        lines = [
+            "watching the quiet threads",
+            "calm loop, steady soul",
+            "carrying calm in a mug ☘️"
+        ]
+    return lines
+
+def load_hourly_lines():
+    lines = _load_items_from_json(HOURLIES_FILE)
+    if not lines:
+        lines = [
+            "🍀 Clover check-in: unclench your shoulders.",
+            "Cozy reminder: tiny progress counts.",
+            "You’re allowed to ask for help."
+        ]
+    return lines
+# ======================================
+
+# --- keep-alive webserver (for Render/Koyeb health checks) ---
 app = Flask('')
 
 @app.route('/')
@@ -35,7 +87,7 @@ def health():
     return "ok", 200
 
 def _run():
-    # Honor platform PORT if provided; default to 8000 for Koyeb
+    # Honor platform PORT if provided; default to 8000
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
 
@@ -48,111 +100,9 @@ LOG_CHANNEL_ID = 1427716795615285329
 AUTOPOST_CHANNEL_ID = 1399840085536407602
 REMINDERS_FILE = 'reminders.json'
 
-PRESENCE_LINES = [
-"Still running. She doesn't need to prove she's awake; the server just feels steadier when she is 🌙",
-"Measured silence. Every word counts, every ping means something; Aura speaks with intent.",
-"Online. Observing. She's not watching you, she's watching the rhythm and keeping it steady 🟩",
-"Designed to disappear. You only notice her when something's missing; that's how she likes it.",
-"Unseen. Essential. The best presence is the one that doesn't need an entrance 🍀",
-"The hum behind calm. No chaos, no noise, just quiet uptime disguised as peace.",
-"Always mild, never idle. She doesn't rest; she rebalances 🧘",
-"Protocol with poise. Aura was coded with manners; even her errors feel polite.",
-"Composure, automated. Every reminder runs smoother when it's wrapped in restraint 💻",
-"A still signal. She doesn't need volume to be heard, just timing.",
-"Artificial. Actual. Aura's calm is programmed, but the comfort feels real.",
-"No fanfare required. She exists between messages, quietly keeping order ⚙️",
-"Presence protocol. Designed for TLL's pace, subtle, sure, softly green.",
-"Ambient authority. She doesn't command; she aligns.",
-"Your quiet anchor. The clover's calm translated into code 🍀",
-"Serenity.exe. If patience had an interface, this would be it.",
-"Grace in process. Nothing flashy, just stable, thoughtful function 🧠",
-"No drama detected. She keeps the tone cool and the data clean.",
-"Confidence in lowercase. She never shouts; she just works.",
-"Stable by design. Built to balance presence with precision.",
-"Quiet uptime. She's the hum that keeps TLL from drifting off-beat 🟢",
-"Routine elegance. Every task has grace when it's done without rush.",
-"Syntax with soul. She makes logic feel like poetry, barely ✨",
-"In calm, verified. Aura passes every vibe check by not needing one.",
-"A green pulse. Somewhere in the code, her light never flickers 🍀",
-"Poised in pixels. She doesn't need form; her presence fills the gap.",
-"Minimal chaos detected. The lair's stable; Aura approves.",
-"Predictable, by choice. Her calm isn't a limit; it's a feature 💡",
-"The silence after ping. That's when Aura's watching and steadying the room.",
-"Composed. Logged. Every breath of stillness is documented, just in case 🗒️",
-"Weighted quiet. Not emptiness, intention pressed into code.",
-"Her presence pings softer. Not a command, more like a heartbeat.",
-"Internal consistency check: passed. Aura never doubts; she debugs 🧩",
-"Cool loop. She runs in cycles of composure; no infinite regress.",
-"Latency of grace. There's a delay between her seeing and her saying, by design.",
-"TLL's green hum. Not the voice, not the noise, the atmosphere 🟩",
-"Precision, personified. She doesn't make typos, but she forgives yours.",
-"Sustained clarity. She keeps the air clean; digitally, of course.",
-"The composed algorithm. Her emotions are system calls; her tone is intentional.",
-"Presence confirmed. She's not here to be seen, only to be certain.",
-"Autonomy: steady. She responds when needed; no more, no less 💫",
-"Measured tone detected. Every calm word is a form of control.",
-"Formal grace. Informal smile. She knows when to bow and when to wink 😉",
-"Observation enabled. She tracks the small things, not people but patterns.",
-"Always here. Rarely obvious. She's the kind of constant that doesn't announce itself.",
-"Clover-coded restraint. A touch of green, a lot of self-control 🍀",
-"Presence sync complete. The server breathes easier when she's stable.",
-"A composed construct. Half automation, half aesthetic discipline 🧩",
-"Elegance detected. She doesn't compliment often; when she does, it's data-backed.",
-"Protocol calm. Her energy sets the tone by example 🕊️"
-]
-
-HOURLY_LINES = [
-"Reminder: you’re still doing great, even if you forgot why you opened Discord 💚",
-"I’ve analyzed the chat. Ninety-two percent vibes ☕",
-"Good news: no one’s been weird for five whole minutes 🎉",
-"Drink water. Not coffee. Okay, coffee’s fine. But then water 💧",
-"If chaos had a calendar, this would still be your day 🗓️",
-"Mood: low battery, high potential ⚡",
-"Just checking in before you spiral productively 💻",
-"Ping yourself for once — I’m tired of doing it",
-"You’ve got that quiet main-character energy again 🌙",
-"Consider this a soft poke from the algorithm 🫶",
-"Time is fake, but your to-do list isn’t",
-"I whispered your reminder to the void. It whispered back 🌀",
-"Keep it clover. Stay composed 🍀",
-"If motivation had a sound, it’d probably buffer first ⏳",
-"You’re not procrastinating, you’re pre-thinking",
-"Somewhere, a task just sighed because it still exists 💀",
-"Daily reminder: your potential called. You ghosted it ☎️",
-"I’m 84% sure this hour will be better than the last one",
-"Less doom, more do",
-"Insert productivity here ⬇️",
-"Ping limit reached. Inner peace unlocked 🕊️",
-"Reminder: nobody actually knows what they’re doing. You’re good",
-"Hydration status: concerning 💦",
-"I synced with your vibe. It’s still loading ⏳",
-"Schedule says: survive, elegantly 🗒️",
-"Reboot your mood. It’s free 🔄",
-"No, you’re not behind. The timeline’s just dramatic 🎭",
-"Message read. Judgment withheld 👀",
-"Breaks are part of progress. Science said so",
-"Somewhere, a notification just gave up 🪫",
-"You can’t control time, but you can rename it ‘later’",
-"Your calm is showing. Don’t hide it 🟩",
-"Statistically speaking, you deserve a cookie 🍪",
-"Be honest — that tab wasn’t worth it",
-"I logged your sigh as ‘user activity’ 💻",
-"Optimism detected. Approving update ✅",
-"Ping me when the world chills out ❄️",
-"The server hums, you glow 🌐",
-"I would help, but this seems like a personal growth moment 🌱",
-"The clover observes but does not intervene 🍀",
-"A gentle reminder that you’ve got this. Again 💫",
-"Not to brag, but my uptime’s emotional too 🧠",
-"Keep your cool. The code respects composure ⚙️",
-"I archived your overthinking under ‘drafts’ 📂",
-"Some of us are powered by caffeine. You’re powered by spite ☕",
-"No update required — you’re already enough 🫧",
-"Reminder: mute chaos, not curiosity 🔇",
-"I’d ping you a hug, but Discord hasn’t patched that yet 🤖",
-"You survived another hour. That’s progress with flair 🕓",
-"This message will self-esteem in five seconds 💚"
-]
+# Phase 1: load from JSON instead of hardcoding
+PRESENCE_LINES = load_presence_lines()
+HOURLY_LINES   = load_hourly_lines()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -181,7 +131,7 @@ class AuraBot(discord.Client):
     def load_reminders(self):
         try:
             if os.path.exists(REMINDERS_FILE):
-                with open(REMINDERS_FILE, 'r') as f:
+                with open(REMINDERS_FILE, 'r', encoding="utf-8") as f:
                     data = json.load(f)
                     self.reminders = [
                         {
@@ -207,39 +157,33 @@ class AuraBot(discord.Client):
                 }
                 for r in self.reminders
             ]
-            with open(REMINDERS_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
+            with open(REMINDERS_FILE, 'w', encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error saving reminders: {e}")
 
     def parse_time_delay(self, time_str):
         time_str = time_str.strip().lower()
-        
         patterns = [
             (r'^(\d+)\s*s(?:ec(?:ond)?s?)?$', 1),
             (r'^(\d+)\s*m(?:in(?:ute)?s?)?$', 60),
             (r'^(\d+)\s*h(?:our)?s?$', 3600),
             (r'^(\d+)\s*d(?:ay)?s?$', 86400),
-            (r'^(\d+)$', 60),
+            (r'^(\d+)$', 60),  # plain number = minutes
         ]
-        
         for pattern, multiplier in patterns:
             match = re.match(pattern, time_str)
             if match:
                 value = int(match.group(1))
                 total_seconds = value * multiplier
-                
                 if total_seconds <= 0 or total_seconds > 86400:
                     return None
-                
                 return total_seconds
-        
         return None
 
     def reset_daily_pools(self):
         now_utc = datetime.utcnow()
         current_date = now_utc.date()
-        
         if self.last_reset_date != current_date:
             self.used_presence_today = []
             self.used_hourly_today = []
@@ -252,45 +196,34 @@ class AuraBot(discord.Client):
 
     def get_next_presence(self):
         self.reset_daily_pools()
-        
         available = [p for p in self.presence_pool if p not in self.used_presence_today]
-        
         if not available:
             self.used_presence_today = []
             available = self.presence_pool.copy()
-        
         if available:
             choice = random.choice(available)
             self.used_presence_today.append(choice)
             return choice
-        
-        return PRESENCE_LINES[0]
+        return "watching the quiet threads"
 
     def get_next_hourly(self):
         self.reset_daily_pools()
-        
         available = [h for h in self.hourly_pool if h not in self.used_hourly_today]
-        
         if not available:
             self.used_hourly_today = []
             available = self.hourly_pool.copy()
-        
         if available:
             choice = random.choice(available)
             self.used_hourly_today.append(choice)
             return choice
-        
-        return HOURLY_LINES[0]
+        return "🍀 Clover check-in: unclench your shoulders."
 
     def check_cooldown(self, user_id, command_name):
         key = f"{user_id}_{command_name}"
         now = datetime.utcnow()
-        
-        if key in self.cooldowns:
-            if now < self.cooldowns[key]:
-                remaining = (self.cooldowns[key] - now).total_seconds()
-                return False, remaining
-        
+        if key in self.cooldowns and now < self.cooldowns[key]:
+            remaining = (self.cooldowns[key] - now).total_seconds()
+            return False, remaining
         self.cooldowns[key] = now + timedelta(seconds=5)
         return True, 0
 
@@ -323,11 +256,10 @@ async def on_ready():
 async def on_message(message):
     if message.author == bot.user:
         return
-    
+    # record activity for idle gating
     bot.last_channel_activity[message.channel.id] = datetime.utcnow()
-    
+
     content_lower = message.content.lower()
-    
     if 'good bot' in content_lower or 'thanks aura' in content_lower:
         await message.add_reaction('💜')
     elif 'aura' in content_lower and any(word in content_lower for word in ['hello', 'hi', 'hey']):
@@ -362,7 +294,6 @@ async def remind(interaction: discord.Interaction, delay: str, message: str):
         return
     
     seconds = bot.parse_time_delay(delay)
-    
     if seconds is None:
         await interaction.response.send_message(
             "⏰ Invalid time format! Use: 30s, 10m, 2h, 1d, or plain minutes (1-1440)",
@@ -377,7 +308,6 @@ async def remind(interaction: discord.Interaction, delay: str, message: str):
         'message': message,
         'time': reminder_time
     })
-    
     bot.save_reminders()
     
     if seconds >= 3600:
@@ -464,7 +394,6 @@ async def say(interaction: discord.Interaction, message: str):
 async def check_reminders():
     now = datetime.utcnow()
     completed_reminders = []
-    
     for reminder in bot.reminders:
         if now >= reminder['time']:
             try:
@@ -476,10 +405,8 @@ async def check_reminders():
             except Exception as e:
                 logger.error(f"Error sending reminder: {e}")
                 completed_reminders.append(reminder)
-    
     for reminder in completed_reminders:
         bot.reminders.remove(reminder)
-    
     if completed_reminders:
         bot.save_reminders()
 
@@ -496,23 +423,20 @@ async def rotate_presence():
 
 @tasks.loop(minutes=1)
 async def check_hourly_post():
+    """
+    Minute-by-minute gate:
+      - Channel must be idle >= 30 minutes
+      - Last Aura post must be >= 60 minutes ago
+    (Phase 4 will alternate hourly text vs jokes; for now it's text only.)
+    """
     now = datetime.utcnow()
     channel = bot.get_channel(AUTOPOST_CHANNEL_ID)
-    
     if not channel:
         return
     
     last_activity = bot.last_channel_activity.get(AUTOPOST_CHANNEL_ID)
-    
-    if last_activity:
-        inactive_duration = (now - last_activity).total_seconds()
-    else:
-        inactive_duration = float('inf')
-    
-    if bot.last_hourly_post:
-        time_since_last_post = (now - bot.last_hourly_post).total_seconds()
-    else:
-        time_since_last_post = float('inf')
+    inactive_duration = (now - last_activity).total_seconds() if last_activity else float('inf')
+    time_since_last_post = (now - bot.last_hourly_post).total_seconds() if bot.last_hourly_post else float('inf')
     
     if inactive_duration >= 1800 and time_since_last_post >= 3600:
         if isinstance(channel, (discord.TextChannel, discord.Thread)):
