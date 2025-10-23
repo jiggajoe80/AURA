@@ -23,6 +23,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('Aura')
+# --- Aura modular cogs (leave empty until we add Phase 2 modules) ---
+INITIAL_EXTENSIONS: list[str] = []
 
 # ===== JSON DATA LOADING (Phase 1) =====
 DATA_DIR = Path(__file__).parent / "data"
