@@ -124,6 +124,14 @@ class AuraBot(discord.Client):
     except Exception as e:
         logger.exception(f"Failed to attach reload cog: {e}")
 
+            # attach auto-reply cog (Phase 2)
+        try:
+            from cogs import auto_reply as ar
+            ar.setup(self)
+            logger.info("Auto-reply cog attached.")
+        except Exception as e:
+            logger.exception(f"Failed to attach auto-reply cog: {e}")
+
     # --- your existing command sync (keep exactly as you had it) ---
     try:
         # If you sync per-guild for instant availability, keep that here.
