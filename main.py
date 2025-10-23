@@ -25,6 +25,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Aura")
 
+# === modular extensions (cogs) ===
+INITIAL_EXTENSIONS = [
+    "cogs.reload_content",   # Phase 1 reloads
+    "cogs.auto_reply",       # Phase 2 (will load if present; otherwise it just logs failure)
+]
+
 # ===== JSON DATA LOADING (Phase 1) =====
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = os.getenv("AURA_PRESENCE_FILE", "AURA.PRESENCE.v2.json")
@@ -114,15 +120,22 @@ class AuraBot(discord.Client):
         self.last_hourly_post = datetime.utcnow() - timedelta(hours=2)
         self.cooldowns = {}
 
-    async def setup_hook(self):
-    # --- attach the reload cog ---
-    try:
-        import importlib
-        rc = importlib.import_module("cogs.reload_content")
-        await rc.setup(self)   # <-- pass the bot ONLY, no keyword args
-        logger.info("Reload cog attached.")
-    except Exception as e:
-        logger.exception(f"Failed to attach reload cog: {e}")
+       async def setup_hook(self):
+        # load modular extensions (cogs)
+        for ext in INITIAL_EXTENSIONS:
+            try:
+                await self.load_extension(ext)
+                logger.info(f"Loaded extension: {ext}")
+            except Exception as e:
+                # Not fatal if a cog is missing during rollout; we just log it.
+                logger.exception(f"Failed to load {ext}: {e}")
+
+        # sync slash commands
+        try:
+            await self.tree.sync()
+            logger.info("Slash commands synced.")
+        except Exception as e:
+            logger.exception(f"Failed to sync slash commands: {e}")
 
             # attach auto-reply cog (Phase 2)
         try:
