@@ -1,75 +1,107 @@
 # cogs/reload_content.py
-import os
+# Lightweight “reload JSON” utilities wired into the existing CommandTree.
+# Works with a discord.Client subclass that owns .tree (app_commands.CommandTree)
+
+from __future__ import annotations
+
 import json
+import os
+from pathlib import Path
+
 import discord
 from discord import app_commands
-from discord.ext import commands
 
-PRESENCE_ENV = "AURA_PRESENCE_FILE"
-HOURLIES_ENV = "AURA_HOURLIES_FILE"
 
-def _load_text_lines(path: str) -> list[str]:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
+def setup(*, client: discord.Client, tree: app_commands.CommandTree,
+          presence_ref: list[str], hourly_ref: list[str], logger) -> None:
+    """
+    Attach three slash commands to the provided tree:
+
+      /content_status   -> anyone; shows counts from in-memory pools
+      /presence_reload  -> admins only; reloads data/AURA.PRESENCE.v2.json
+      /hourly_reload    -> admins only; reloads data/AURA.HOURLIES.v2.json
+    """
+
+    # Where the JSON files live on disk
+    DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+    PRESENCE_FILE = os.getenv("AURA_PRESENCE_FILE", "AURA.PRESENCE.v2.json")
+    HOURLIES_FILE = os.getenv("AURA_HOURLIES_FILE", "AURA.HOURLIES.v2.json")
+
+    def _load_lines(path: Path) -> list[str]:
+        with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
-        items = data.get("items", [])
-        # allow either [{ "text": "..."}, ...] or ["...", "..."]
-        out: list[str] = []
-        for it in items:
-            if isinstance(it, dict) and "text" in it:
-                out.append(str(it["text"]))
-            elif isinstance(it, str):
-                out.append(it)
-        return [s.strip() for s in out if s and s.strip()]
-    except Exception:
-        return []
+        # Accept either {"presence":[...]} / {"hourlies":[...]} or a raw list
+        if isinstance(data, dict):
+            # take first list-like value
+            for v in data.values():
+                if isinstance(v, list):
+                    return [str(x).strip() for x in v if str(x).strip()]
+            return []
+        return [str(x).strip() for x in data if str(x).strip()]
 
-class ReloadContent(commands.Cog):
-    """Admin-only slash commands to reload presence/hourlies JSON at runtime."""
+    async def _require_admin(inter: discord.Interaction) -> bool:
+        # DMs: deny; Guild: only admins
+        if not inter.guild:
+            await inter.response.send_message("Server only.", ephemeral=True)
+            return False
+        if not getattr(inter.user, "guild_permissions", None) or not inter.user.guild_permissions.administrator:
+            await inter.response.send_message("Admins only.", ephemeral=True)
+            return False
+        return True
 
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
+    # ---- callbacks ---------------------------------------------------------
 
-    @app_commands.command(name="content_status", description="Show counts loaded from JSON.")
-    async def content_status(self, interaction: discord.Interaction):
-        presence_count = len(getattr(self.bot, "presence_pool", []))
-        hourly_count = len(getattr(self.bot, "hourly_pool", []))
-        msg = (
-            f"**Presence lines:** {presence_count}\n"
-            f"**Hourly lines:** {hourly_count}"
-        )
-        await interaction.response.send_message(msg, ephemeral=True)
-
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.command(name="presence_reload", description="Reload presence pool from JSON.")
-    async def presence_reload(self, interaction: discord.Interaction):
-        path = os.getenv(PRESENCE_ENV, "data/AURA.PRESENCE.v2.json")
-        lines = _load_text_lines(path)
-        self.bot.presence_pool = lines
-        self.bot.used_presence_today = []
-        await interaction.response.send_message(
-            f"Presence reloaded: {len(lines)} lines.", ephemeral=True
+    async def content_status(inter: discord.Interaction):
+        await inter.response.send_message(
+            f"Presence lines loaded: **{len(presence_ref)}**\n"
+            f"Hourly lines loaded: **{len(hourly_ref)}**",
+            ephemeral=True,
         )
 
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.command(name="hourly_reload", description="Reload hourly pool from JSON.")
-    async def hourly_reload(self, interaction: discord.Interaction):
-        path = os.getenv(HOURLIES_ENV, "data/AURA.HOURLIES.v2.json")
-        lines = _load_text_lines(path)
-        self.bot.hourly_pool = lines
-        self.bot.used_hourly_today = []
-        await interaction.response.send_message(
-            f"Hourlies reloaded: {len(lines)} lines.", ephemeral=True
-        )
+    async def presence_reload(inter: discord.Interaction):
+        if not await _require_admin(inter):
+            return
+        try:
+            lines = _load_lines(DATA_DIR / PRESENCE_FILE)
+            presence_ref.clear()
+            presence_ref.extend(lines)
+            logger.info("Presence JSON reloaded: %d lines", len(lines))
+            await inter.followup.send(f"Presence reloaded: **{len(lines)}** lines.", ephemeral=True)
+        except Exception as e:
+            logger.exception("Presence reload failed: %s", e)
+            await inter.followup.send(f"Presence reload failed: `{e}`", ephemeral=True)
 
-    @presence_reload.error
-    @hourly_reload.error
-    async def admin_error(self, interaction: discord.Interaction, error: Exception):
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
-        else:
-            await interaction.response.send_message("Error.", ephemeral=True)
+    async def hourly_reload(inter: discord.Interaction):
+        if not await _require_admin(inter):
+            return
+        try:
+            lines = _load_lines(DATA_DIR / HOURLIES_FILE)
+            hourly_ref.clear()
+            hourly_ref.extend(lines)
+            logger.info("Hourlies JSON reloaded: %d lines", len(lines))
+            await inter.followup.send(f"Hourlies reloaded: **{len(lines)}** lines.", ephemeral=True)
+        except Exception as e:
+            logger.exception("Hourlies reload failed: %s", e)
+            await inter.followup.send(f"Hourlies reload failed: `{e}`", ephemeral=True)
 
-async def setup(bot: commands.Bot):
-    # NOTE: discord.py 2.x extension entrypoint
-    await bot.add_cog(ReloadContent(bot))
+    # ---- register commands on the provided tree ----------------------------
+
+    tree.add_command(app_commands.Command(
+        name="content_status",
+        description="Show how many lines are loaded (presence & hourly).",
+        callback=content_status,
+    ))
+
+    tree.add_command(app_commands.Command(
+        name="presence_reload",
+        description="Reload presence JSON (admins only).",
+        callback=presence_reload,
+    ))
+
+    tree.add_command(app_commands.Command(
+        name="hourly_reload",
+        description="Reload hourly JSON (admins only).",
+        callback=hourly_reload,
+    ))
+
+    logger.info("Reload cog attached.")
