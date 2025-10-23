@@ -115,21 +115,25 @@ class AuraBot(discord.Client):
         self.cooldowns = {}
 
     async def setup_hook(self):
-        """
-        Runs right after login; great place to attach cogs and sync slash commands.
-        """
-        # attach the reload cog (no extension loader required)
-        try:
-            from cogs import reload_content as rc
-            rc.setup(
-                client=self,
-                load_presence_cb=load_presence_lines,
-                load_hourly_cb=load_hourly_lines,
-                after_reload=self.reset_daily_pools,   # keep daily logic consistent
-            )
-            logger.info("Reload cog attached.")
-        except Exception as e:
-            logger.exception(f"Failed to attach reload cog: {e}")
+    # --- attach the reload cog ---
+    try:
+        import importlib
+        rc = importlib.import_module("cogs.reload_content")
+        await rc.setup(self)   # <-- pass the bot ONLY, no keyword args
+        logger.info("Reload cog attached.")
+    except Exception as e:
+        logger.exception(f"Failed to attach reload cog: {e}")
+
+    # --- your existing command sync (keep exactly as you had it) ---
+    try:
+        # If you sync per-guild for instant availability, keep that here.
+        # Example:
+        # guild = discord.Object(id=YOUR_GUILD_ID)
+        # await self.tree.sync(guild=guild)
+        # await self.tree.sync()  # or global if you also do global
+        logger.info("Slash commands synced.")
+    except Exception as e:
+        logger.exception(f"Slash command sync failed: {e}")
 
         # sync slash commands
         try:
