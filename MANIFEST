@@ -1,0 +1,17 @@
+# AURA BOT — MANIFEST
+
+Last updated: 2025-10-22
+
+## Overview
+Aura is a lightweight Discord bot (slash-first) with JSON-driven content and modular cogs.
+
+## Hosting
+- Platform: Render (Free Web Service)
+- Keep-alive: Flask on `/` and `/health`, pinged by UptimeRobot
+- Repo: GitHub (main branch)
+
+## Runtime
+- Python 3.11
+- Key deps: discord.py 2.4.0, Flask 3.0.0, python-dotenv 1.0.1
+
+## File Map
