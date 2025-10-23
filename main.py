@@ -244,6 +244,7 @@ async def on_ready():
     logger.info(f"{bot.user} has connected to Discord!")
     logger.info(f"Bot is in {len(bot.guilds)} guilds")
 
+    # existing startup tasks
     bot.load_reminders()
     bot.reset_daily_pools()
 
@@ -252,12 +253,22 @@ async def on_ready():
         activity=discord.Activity(type=discord.ActivityType.watching, name=presence_text)
     )
 
+    # start loops if not already running
     if not check_reminders.is_running():
         check_reminders.start()
     if not rotate_presence.is_running():
         rotate_presence.start()
     if not check_hourly_post.is_running():
         check_hourly_post.start()
+
+    # --- NEW: instant slash sync ---
+    try:
+        await bot.tree.sync()  # global
+        for g in bot.guilds:   # per guild
+            await bot.tree.sync(guild=discord.Object(id=g.id))
+        logger.info("Commands synced globally and per-guild (instant).")
+    except Exception as e:
+        logger.exception(f"Per-guild sync failed: {e}")
 
 @bot.event
 async def on_message(message):
