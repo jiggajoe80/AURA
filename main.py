@@ -120,7 +120,7 @@ class AuraBot(discord.Client):
         self.last_hourly_post = datetime.utcnow() - timedelta(hours=2)
         self.cooldowns = {}
 
-       async def setup_hook(self):
+    async def setup_hook(self):
         # load modular extensions (cogs)
         for ext in INITIAL_EXTENSIONS:
             try:
@@ -129,6 +129,13 @@ class AuraBot(discord.Client):
             except Exception as e:
                 # Not fatal if a cog is missing during rollout; we just log it.
                 logger.exception(f"Failed to load {ext}: {e}")
+
+        # sync slash commands
+        try:
+            await self.tree.sync()
+            logger.info("Slash commands synced.")
+        except Exception as e:
+            logger.exception(f"Failed to sync slash commands: {e}")
 
         # sync slash commands
         try:
