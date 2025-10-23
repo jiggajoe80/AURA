@@ -1,90 +1,98 @@
 # cogs/reload_content.py
-# Adds 3 slash commands to your existing Client:
-# /content_status, /presence_reload, /hourly_reload
-
 from __future__ import annotations
-from typing import Callable, Optional
-import random
-import sys
+
+import os
+import json
+from pathlib import Path
+
 import discord
+from discord.ext import commands
 from discord import app_commands
 
-def setup(
-    client: discord.Client,
-    load_presence_cb: Callable[[], list[str]],
-    load_hourly_cb: Callable[[], list[str]],
-    after_reload: Optional[Callable[[], None]] = None,
-) -> None:
-    """
-    Attach slash commands to the provided client.
-    We update __main__.PRESENCE_LINES / HOURLY_LINES so your
-    daily reset logic continues to use fresh data.
-    """
-    tree = client.tree
 
-    def _is_admin(inter: discord.Interaction) -> bool:
-        # simple/for now: manage_guild = true
-        perms = getattr(getattr(inter.user, "guild_permissions", None), "manage_guild", False)
-        return bool(perms)
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+PRESENCE_FILE = os.getenv("AURA_PRESENCE_FILE", "AURA.PRESENCE.v2.json")
+HOURLIES_FILE = os.getenv("AURA_HOURLIES_FILE", "AURA.HOURLIES.v2.json")
 
-    @tree.command(name="content_status", description="Show how many lines are in memory (presence/hourly).")
-    async def content_status(inter: discord.Interaction):
-        pres_loaded = getattr(client, "presence_pool", None)
-        hour_loaded = getattr(client, "hourly_pool", None)
-        pres_n = len(pres_loaded) if isinstance(pres_loaded, list) else 0
-        hour_n = len(hour_loaded) if isinstance(hour_loaded, list) else 0
-        await inter.response.send_message(
-            f"🧪 Loaded now → Presence: **{pres_n}** | Hourly: **{hour_n}**",
-            ephemeral=True,
-        )
 
-    @tree.command(name="presence_reload", description="Reload presence JSON (admins only).")
-    async def presence_reload(inter: discord.Interaction):
-        if not _is_admin(inter):
-            await inter.response.send_message("❌ Admins only (Manage Server).", ephemeral=True)
-            return
+def _load_json_lines(path: Path) -> list[str]:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        # supports {"presence":[...]} or just ["..."]
+        if isinstance(data, dict):
+            # pick first list-like value
+            for v in data.values():
+                if isinstance(v, list):
+                    return [str(x).strip() for x in v if str(x).strip()]
+            return []
+        return [str(x).strip() for x in data if str(x).strip()]
+    except Exception:
+        return []
 
-        # Refresh from disk via the callback
-        new_lines = load_presence_cb()
-        if not new_lines:
-            await inter.response.send_message("⚠️ No lines found in presence file.", ephemeral=True)
-            return
 
-        # Update globals on the running main module so midnight resets pick it up
-        main_mod = sys.modules.get("__main__")
-        if main_mod is not None:
-            main_mod.PRESENCE_LINES = list(new_lines)
+class ReloadContent(commands.Cog):
+    """Reload presence/hourly JSON files without restarting."""
 
-        # Immediately refresh today's pool so it’s live now
-        client.presence_pool = list(new_lines)
-        random.shuffle(client.presence_pool)
-        client.used_presence_today = []
+    def __init__(self, bot: commands.Bot | discord.Client):
+        self.bot = bot
 
-        if after_reload:
-            after_reload()
+    #
+    # Commands
+    #
+    @app_commands.command(name="content_status", description="Show how many presence/hourly lines are loaded.")
+    async def content_status(self, interaction: discord.Interaction):
+        pres = len(getattr(self.bot, "presence_pool", []))
+        hours = len(getattr(self.bot, "hourly_pool", []))
+        msg = f"Presence: **{pres}** lines\nHourlies: **{hours}** lines"
+        await interaction.response.send_message(msg, ephemeral=True)
 
-        await inter.response.send_message(f"✅ Presence reloaded: **{len(new_lines)}** lines.", ephemeral=True)
+    @app_commands.command(name="presence_reload", description="Reload presence JSON (admin only).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def presence_reload(self, interaction: discord.Interaction):
+        path = DATA_DIR / PRESENCE_FILE
+        lines = _load_json_lines(path)
+        if lines:
+            self.bot.presence_pool = lines
+            await interaction.response.send_message(
+                f"Reloaded **{len(lines)}** presence lines from `{PRESENCE_FILE}`.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"Failed to load presence from `{PRESENCE_FILE}`.", ephemeral=True
+            )
 
-    @tree.command(name="hourly_reload", description="Reload hourly JSON (admins only).")
-    async def hourly_reload(inter: discord.Interaction):
-        if not _is_admin(inter):
-            await inter.response.send_message("❌ Admins only (Manage Server).", ephemeral=True)
-            return
+    @app_commands.command(name="hourly_reload", description="Reload hourly JSON (admin only).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def hourly_reload(self, interaction: discord.Interaction):
+        path = DATA_DIR / HOURLIES_FILE
+        lines = _load_json_lines(path)
+        if lines:
+            self.bot.hourly_pool = lines
+            # Reset “used today” so the fresh set can be used immediately if you want
+            if hasattr(self.bot, "used_hourly_today"):
+                self.bot.used_hourly_today = []
+            await interaction.response.send_message(
+                f"Reloaded **{len(lines)}** hourly lines from `{HOURLIES_FILE}`.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"Failed to load hourlies from `{HOURLIES_FILE}`.", ephemeral=True
+            )
 
-        new_lines = load_hourly_cb()
-        if not new_lines:
-            await inter.response.send_message("⚠️ No lines found in hourly file.", ephemeral=True)
-            return
 
-        main_mod = sys.modules.get("__main__")
-        if main_mod is not None:
-            main_mod.HOURLY_LINES = list(new_lines)
+async def setup(bot: commands.Bot | discord.Client):
+    """Attach cog AND explicitly add app_commands to the tree."""
+    cog = ReloadContent(bot)
+    await bot.add_cog(cog)
 
-        client.hourly_pool = list(new_lines)
-        random.shuffle(client.hourly_pool)
-        client.used_hourly_today = []
+    # Explicitly register the slash commands on the bot's CommandTree.
+    # This is the key piece that makes them show up.
+    bot.tree.add_command(cog.content_status)
+    bot.tree.add_command(cog.presence_reload)
+    bot.tree.add_command(cog.hourly_reload)
 
-        if after_reload:
-            after_reload()
-
-        await inter.response.send_message(f"✅ Hourly reloaded: **{len(new_lines)}** lines.", ephemeral=True)
+    # Optional log so you see it in Render
+    logger = getattr(bot, "logger", None)
+    if logger:
+        logger.info("Reload commands registered on tree.")
