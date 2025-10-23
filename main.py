@@ -111,10 +111,11 @@ intents.message_content = True
 intents.messages = True
 intents.guilds = True
 
-class AuraBot(discord.Client):
+from discord.ext import commands
+
+class AuraBot(commands.Bot):
     def __init__(self):
-        super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
+        super().__init__(command_prefix="!", intents=intents)
         self.reminders = []
         self.presence_pool = []
         self.hourly_pool = []
