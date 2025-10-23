@@ -124,9 +124,21 @@ class AuraBot(discord.Client):
         self.cooldowns = {}
     
     async def setup_hook(self):
-        logger.info("Syncing commands...")
-        await self.tree.sync()
-        logger.info("Commands synced!")
+        # Load cogs (you can leave INITIAL_EXTENSIONS empty for now)
+        for ext in INITIAL_EXTENSIONS:
+            try:
+                await self.load_extension(ext)
+                logger.info(f"Loaded extension: {ext}")
+            except Exception as e:
+                # Not fatal if a cog is missing during rollout; we just log it.
+                logger.exception(f"Failed to load {ext}: {e}")
+
+        # Sync slash commands once at startup
+        try:
+            await self.tree.sync()
+            logger.info("Slash commands synced.")
+        except Exception as e:
+            logger.exception(f"Failed to sync slash commands: {e}")
 
     def load_reminders(self):
         try:
