@@ -25,12 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Aura")
 
-# === modular extensions (cogs) ===
-INITIAL_EXTENSIONS = [
-    "cogs.reload_content",   # Phase 1 reloads
-    "cogs.auto_reply",       # Phase 2 (will load if present; otherwise it just logs failure)
-]
-
 # ===== JSON DATA LOADING (Phase 1) =====
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = os.getenv("AURA_PRESENCE_FILE", "AURA.PRESENCE.v2.json")
@@ -121,47 +115,21 @@ class AuraBot(discord.Client):
         self.cooldowns = {}
 
     async def setup_hook(self):
-        # load modular extensions (cogs)
-        for ext in INITIAL_EXTENSIONS:
-            try:
-                await self.load_extension(ext)
-                logger.info(f"Loaded extension: {ext}")
-            except Exception as e:
-                # Not fatal if a cog is missing during rollout; we just log it.
-                logger.exception(f"Failed to load {ext}: {e}")
-
-        # sync slash commands
+        """
+        Runs right after login; great place to attach cogs and sync slash commands.
+        """
+        # attach the reload cog (no extension loader required)
         try:
-            await self.tree.sync()
-            logger.info("Slash commands synced.")
+            from cogs import reload_content as rc
+            rc.setup(
+                client=self,
+                load_presence_cb=load_presence_lines,
+                load_hourly_cb=load_hourly_lines,
+                after_reload=self.reset_daily_pools,   # keep daily logic consistent
+            )
+            logger.info("Reload cog attached.")
         except Exception as e:
-            logger.exception(f"Failed to sync slash commands: {e}")
-
-        # sync slash commands
-        try:
-            await self.tree.sync()
-            logger.info("Slash commands synced.")
-        except Exception as e:
-            logger.exception(f"Failed to sync slash commands: {e}")
-
-            # attach auto-reply cog (Phase 2)
-        try:
-            from cogs import auto_reply as ar
-            ar.setup(self)
-            logger.info("Auto-reply cog attached.")
-        except Exception as e:
-            logger.exception(f"Failed to attach auto-reply cog: {e}")
-
-    # --- your existing command sync (keep exactly as you had it) ---
-    try:
-        # If you sync per-guild for instant availability, keep that here.
-        # Example:
-        # guild = discord.Object(id=YOUR_GUILD_ID)
-        # await self.tree.sync(guild=guild)
-        # await self.tree.sync()  # or global if you also do global
-        logger.info("Slash commands synced.")
-    except Exception as e:
-        logger.exception(f"Slash command sync failed: {e}")
+            logger.exception(f"Failed to attach reload cog: {e}")
 
         # sync slash commands
         try:
@@ -276,7 +244,6 @@ async def on_ready():
     logger.info(f"{bot.user} has connected to Discord!")
     logger.info(f"Bot is in {len(bot.guilds)} guilds")
 
-    # existing startup tasks
     bot.load_reminders()
     bot.reset_daily_pools()
 
@@ -285,22 +252,12 @@ async def on_ready():
         activity=discord.Activity(type=discord.ActivityType.watching, name=presence_text)
     )
 
-    # start loops if not already running
     if not check_reminders.is_running():
         check_reminders.start()
     if not rotate_presence.is_running():
         rotate_presence.start()
     if not check_hourly_post.is_running():
         check_hourly_post.start()
-
-    # --- NEW: instant slash sync ---
-    try:
-        await bot.tree.sync()  # global
-        for g in bot.guilds:   # per guild
-            await bot.tree.sync(guild=discord.Object(id=g.id))
-        logger.info("Commands synced globally and per-guild (instant).")
-    except Exception as e:
-        logger.exception(f"Per-guild sync failed: {e}")
 
 @bot.event
 async def on_message(message):
