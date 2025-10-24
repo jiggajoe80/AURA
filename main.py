@@ -1,8 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import tasks, commands
-import os, json, random, re, asyncio, logging
-from datetime import datetime, timedelta
+import os, json, random, asyncio, logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask
@@ -28,7 +28,7 @@ INITIAL_EXTENSIONS = [
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = "AURA.PRESENCE.v2.json"
 HOURLIES_FILE = "AURA.HOURLIES.v2.json"
-JOKES_FILE = "AURA.JOKES.v2.json"
+JOKES_FILE = "jokes.json"  # ← use the file you actually committed
 
 LOG_CHANNEL_ID = 1427716795615285329
 AUTOPOST_CHANNEL_ID = 1399840085536407602
@@ -54,25 +54,15 @@ def load_lines_or_default(file, fallback):
     logger.info(f"Loaded {len(lines)} lines from {file}")
     return lines
 
-# --- jokes helpers (append under HELPERS) ------------------------------------
+# ---- joke formatting (shared by hourly + /joke style) ------------------------
 def _split_joke(line: str) -> tuple[str, str]:
-    """
-    Split a joke line of the form 'question||answer'.
-    If no punchline is present, returns ('line', '').
-    """
     parts = [p.strip() for p in str(line).split("||", 1)]
-    if len(parts) == 2:
-        return parts[0], parts[1]
-    return str(line).strip(), ""
+    return (parts[0], parts[1]) if len(parts) == 2 else (str(line).strip(), "")
 
 def _format_joke(line: str) -> str:
-    """Render a Discord-friendly, spoilered punchline message."""
     q, a = _split_joke(line)
-    if a:
-        return f"**Q:** {q} →\n**A:** ||{a}||"
-    # Fallback (no punchline available)
-    return q
-# ----------------------------------------------------------------------------- 
+    return f"**Q:** {q} →\n**A:** ||{a}||" if a else q
+# -----------------------------------------------------------------------------
 
 # ────────────── KEEP ALIVE ──────────────
 app = Flask("")
@@ -111,15 +101,17 @@ class AuraBot(commands.Bot):
         self.last_channel_activity = {}
         self.last_hourly_post = datetime.utcnow() - timedelta(hours=2)
         self.cooldowns = {}
+        self._hourly_enabled = True  # one simple flag you can toggle later if needed
 
     async def setup_hook(self):
+        # load cogs
         for ext in INITIAL_EXTENSIONS:
             try:
                 await self.load_extension(ext)
                 logger.info(f"Loaded extension: {ext}")
             except Exception as e:
                 logger.exception(f"Failed to load {ext}: {e}")
-
+        # sync commands
         try:
             await self.tree.sync()
             logger.info("Slash commands synced.")
@@ -128,27 +120,31 @@ class AuraBot(commands.Bot):
 
     # ───── JSON LOADERS ─────
     def reset_daily_pools(self):
-        now_utc = datetime.utcnow()
-        cur = now_utc.date()
-        if self.last_reset_date != cur:
+        now_utc = datetime.utcnow().date()
+        if self.last_reset_date != now_utc:
             self.used_presence_today = []
             self.used_hourly_today = []
             self.used_jokes_today = []
+
             self.presence_pool = PRESENCE_LINES.copy()
-            self.hourly_pool = HOURLY_LINES.copy()
+            self.hourly_pool   = HOURLY_LINES.copy()
+            self.jokes_pool    = JOKES_LINES.copy()
+
             random.shuffle(self.presence_pool)
             random.shuffle(self.hourly_pool)
-            self.last_reset_date = cur
-            logger.info(f"Daily pools reset at UTC midnight: {cur}")
+            random.shuffle(self.jokes_pool)
 
-    def get_next_presence(self):
+            self.last_reset_date = now_utc
+            logger.info(f"Daily pools reset at UTC midnight: {now_utc}")
+
+    def get_next_presence(self) -> str:
         self.reset_daily_pools()
         available = [p for p in self.presence_pool if p not in self.used_presence_today] or self.presence_pool.copy()
         choice = random.choice(available)
         self.used_presence_today.append(choice)
         return choice
 
-    def get_next_hourly(self):
+    def get_next_hourly(self) -> str:
         self.reset_daily_pools()
         available = [h for h in self.hourly_pool if h not in self.used_hourly_today] or self.hourly_pool.copy()
         choice = random.choice(available)
@@ -156,30 +152,16 @@ class AuraBot(commands.Bot):
         return choice
 
     def get_next_joke(self) -> str | None:
-    """
-    Pick one joke and return it formatted with a spoilered punchline,
-    matching the /joke command style.
-    Accepts data/jokes.json as either:
-      - [{"text":"Question??||Punchline."}, ...]  OR
-      - ["Question??||Punchline.", ...]
-    """
-    self.reset_daily_pools()
-
-    # If you want to keep using the in-memory pool, we’ll refill it from JSON when empty.
-    if not self.jokes_pool:
-        self.jokes_pool = _load_items_from_json("jokes.json") or []
-
-    if not self.jokes_pool:
-        return None
-
-    raw = random.choice(self.jokes_pool)
-    line = raw.get("text") if isinstance(raw, dict) else str(raw)
-
-    # Track usage by the full line string
-    self.used_jokes_today.append(line)
-
-    # Format: **Q:** …  →  **A:** ||…||
-    return _format_joke(line)
+        """Pick a joke, track usage, and return it formatted with spoilered punchline."""
+        self.reset_daily_pools()
+        if not self.jokes_pool:
+            return None
+        # de-dupe-of-the-day
+        candidates = [j for j in self.jokes_pool if j not in self.used_jokes_today] or self.jokes_pool
+        raw = random.choice(candidates)
+        line = raw.get("text") if isinstance(raw, dict) else str(raw)
+        self.used_jokes_today.append(line)
+        return _format_joke(line)
 
     def check_cooldown(self, user_id, command_name):
         key = f"{user_id}_{command_name}"
@@ -257,7 +239,8 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    if message.author == bot.user: return
+    if message.author == bot.user:
+        return
     bot.last_channel_activity[message.channel.id] = datetime.utcnow()
     text = message.content.lower()
     if "good bot" in text or "thanks aura" in text:
@@ -270,6 +253,7 @@ async def on_message(message):
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! {round(bot.latency*1000)}ms")
 
+# ────────────── TASKS ──────────────
 @tasks.loop(seconds=30)
 async def check_reminders():
     now = datetime.utcnow()
@@ -301,60 +285,35 @@ async def check_hourly_post():
     alternating between a joke and an hourly prompt.
     Jokes include a spoilered punchline so they match /joke style.
     """
+    if not bot._hourly_enabled:
+        return
+
     now = datetime.utcnow()
     channel = bot.get_channel(AUTOPOST_CHANNEL_ID)
     if not channel:
         return
 
-    # how long the channel has been quiet
     last_activity = bot.last_channel_activity.get(AUTOPOST_CHANNEL_ID)
     inactive_seconds = (now - last_activity).total_seconds() if last_activity else float("inf")
-
-    # how long since our last post
     since_last = (now - bot.last_hourly_post).total_seconds() if bot.last_hourly_post else float("inf")
 
     # Only post if: quiet ≥ 30m and last post ≥ 60m
     if inactive_seconds >= 1800 and since_last >= 3600:
-        if isinstance(channel, (discord.TextChannel, discord.Thread)):
-            try:
-                # flip branch: joke <-> hourly
-                bot._hourly_flip = not bot._hourly_flip
-
-                message: str | None = None
-                if bot._hourly_flip:
-                    message = bot.get_next_joke()  # may return None if no jokes loaded
-
-                if not message:
-                    message = bot.get_next_hourly()
-
-                await channel.send(message)
-                bot.last_hourly_post = now
-                logger.info(f"Posted {'joke' if bot._hourly_flip else 'hourly'}: {message}")
-            except Exception as e:
-                logger.error(f"Hourly post error: {e}")
-
-    last_activity = bot.last_channel_activity.get(AUTOPOST_CHANNEL_ID)
-    idle = (now - last_activity).total_seconds() if last_activity else float("inf")
-    since_last = (now - bot.last_hourly_post).total_seconds()
-
-    if idle >= 1800 and since_last >= 3600:
         try:
-            bot._hourly_flip = not bot._hourly_flip
-            branch = "joke" if bot._hourly_flip and bot.jokes_pool else "hourly"
+            bot._hourly_flip = not bot._hourly_flip  # flip branch: joke <-> hourly
 
-            if branch == "joke":
-                joke = bot.get_next_joke()
-                if "||" in joke:
-                    q, a = joke.split("||", 1)
-                    msg = f"**Q:** {q.strip()} →\n**A:** ||{a.strip()}||"
-                else:
-                    msg = joke
-            else:
-                msg = bot.get_next_hourly()
+            message: str | None = None
+            if bot._hourly_flip and bot.jokes_pool:
+                message = bot.get_next_joke()  # formatted with spoiler
 
-            await channel.send(msg)
+            if not message:  # fallback to hourly text
+                message = bot.get_next_hourly()
+
+            if isinstance(channel, (discord.TextChannel, discord.Thread)):
+                await channel.send(message)
+
             bot.last_hourly_post = now
-            logger.info(f"Posted {branch}: {msg}")
+            logger.info(f"Posted {'joke' if bot._hourly_flip else 'hourly'}: {message}")
         except Exception as e:
             logger.error(f"Hourly post error: {e}")
 
