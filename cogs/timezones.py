@@ -5,49 +5,31 @@ from discord.ext import commands
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-NEUTRAL_CLOCK = "🕒"
-
-# Fixed labels by request (always EST/CST/MST/PST)
-ZONES = [
-    ("—EST—", "America/New_York"),
-    ("—CST—", "America/Chicago"),
-    ("—MST—", "America/Denver"),
-    ("—PST—", "America/Los_Angeles"),
+US_ZONES = [
+    ("EST", "America/New_York"),
+    ("CST", "America/Chicago"),
+    ("MST", "America/Denver"),
+    ("PST", "America/Los_Angeles"),
 ]
 
-def fmt_date(dt: datetime) -> str:
-    # Example: Wednesday — October, 22, 2025
-    # (note the comma after the month, per your spec)
-    day = dt.strftime("%A")
-    month = dt.strftime("%B")
-    d = dt.strftime("%d").lstrip("0")
-    year = dt.strftime("%Y")
-    return f"**{day}** — {month}, {d}, {year}"
-
-def fmt_time(dt: datetime) -> str:
-    # 12-hour, lowercase am/pm, no leading zero (e.g., 6:45am)
-    t = dt.strftime("%I:%M%p")  # e.g., '06:45AM'
-    t = t.lstrip("0")           # '6:45AM'
-    return f"**{t.lower()}**"   # '6:45am' bolded
-
-class TimezonesCog(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+class Timezones(commands.Cog):
+    def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="time", description="Show current time in ET/CT/MT/PT (12-hour).")
+    @app_commands.command(name="time", description="Show current US time zones.")
     async def time(self, interaction: discord.Interaction):
-        # Use ET for the date stamp line (consistent anchor)
-        now_et = datetime.now(ZoneInfo("America/New_York"))
-
-        header = f"Today is {fmt_date(now_et)} — and the current time is:"
+        now = datetime.now()
         lines = []
+        header_day = now.astimezone(ZoneInfo("America/New_York")).strftime("%A")
+        header_date = now.astimezone(ZoneInfo("America/New_York")).strftime("%B, %-d, %Y")
+        lines.append(f"Today is **{header_day}** — {header_date} — and the current time is:")
 
-        for label, tz in ZONES:
-            t_local = datetime.now(ZoneInfo(tz))
-            lines.append(f"• {NEUTRAL_CLOCK} {fmt_time(t_local)}  {label}")
+        for label, zone in US_ZONES:
+            tz = ZoneInfo(zone)
+            local = now.astimezone(tz)
+            lines.append(f"• 🕒 **{local.strftime('%-I:%M%p').lower()}** —**{label}**—")
 
-        out = header + "\n" + "\n".join(lines)
-        await interaction.response.send_message(out)
+        await interaction.response.send_message("\n".join(lines))
 
-async def setup(bot: commands.Bot):
-    await bot.add_cog(TimezonesCog(bot))
+async def setup(bot):
+    await bot.add_cog(Timezones(bot))
