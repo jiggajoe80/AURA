@@ -1,130 +1,159 @@
+# cogs/events.py
+from __future__ import annotations
+
 import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
+from typing import Dict, Tuple
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+from zoneinfo import ZoneInfo
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-EVENTS_FILE = DATA_DIR / "events.json"
 
-CLOCK = "🕒"
+DATA_FILE = Path("data/events.json")
 
-# Labels per your spec (fixed EST/CST/MST/PST style tags)
-ZONE_ORDER = [
-    ("ET", ZoneInfo("America/New_York"), "EST"),
-    ("CT", ZoneInfo("America/Chicago"), "CST"),
-    ("MT", ZoneInfo("America/Denver"), "MST"),
-    ("PT", ZoneInfo("America/Los_Angeles"), "PST"),
-]
+# Four core US timezones we’ll display
+TZS: Dict[str, ZoneInfo] = {
+    "EST": ZoneInfo("America/New_York"),
+    "CST": ZoneInfo("America/Chicago"),
+    "MST": ZoneInfo("America/Denver"),
+    "PST": ZoneInfo("America/Los_Angeles"),
+}
 
-def _load_events() -> dict[str, str]:
-    try:
-        with open(EVENTS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # Expecting {"Title": "2025-10-24T20:00:00-04:00", ...}
-        return data if isinstance(data, dict) else {}
-    except FileNotFoundError:
-        return {}
-    except Exception:
-        return {}
 
-def _pick_active_event(evmap: dict[str, str]) -> tuple[str, datetime] | None:
-    """Return (title, dt_aware) for the next upcoming event, else latest past."""
-    now = datetime.now(timezone.utc)
-    parsed: list[tuple[str, datetime]] = []
-    for title, iso in evmap.items():
-        try:
-            dt = datetime.fromisoformat(iso)  # respects the offset in the string
-            if dt.tzinfo is None:
-                # If someone forgot the offset, assume ET
-                dt = dt.replace(tzinfo=ZoneInfo("America/New_York"))
-            parsed.append((title, dt))
-        except Exception:
-            continue
+@dataclass
+class EventConfig:
+    title: str
+    iso: str  # ISO-8601 string (may include offset, e.g. 2025-10-24T20:00:00-04:00)
 
-    if not parsed:
+
+def _load_first_event() -> EventConfig | None:
+    """
+    events.json can be either:
+      • {"My Event Title": "2025-10-24T20:00:00-04:00"}
+      • [{"title": "My Event Title", "start_at": "2025-10-24T20:00:00-04:00"}, ...]
+    We grab the first entry and ignore the rest for the simple /event command.
+    """
+    if not DATA_FILE.exists():
         return None
 
-    future = [(t, d) for (t, d) in parsed if d.astimezone(timezone.utc) >= now]
-    if future:
-        # choose the soonest upcoming
-        title, dt = min(future, key=lambda td: td[1])
-        return title, dt
-    # else choose the most recent past
-    title, dt = max(parsed, key=lambda td: td[1])
-    return title, dt
+    with DATA_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
 
-def _fmt_date_line(dt_et: datetime) -> str:
-    # dt_et is ET-aware here
-    day = dt_et.strftime("%A")
-    month = dt_et.strftime("%B")
-    date_num = dt_et.strftime("%d").lstrip("0")
-    year = dt_et.strftime("%Y")
-    return f"Today is **{day}** — {month}, {date_num}, {year} — and the current time is:"
+    # dict schema
+    if isinstance(data, dict):
+        if not data:
+            return None
+        title, iso = next(iter(data.items()))
+        return EventConfig(title=title, iso=iso)
 
-def _fmt_time(dt: datetime) -> str:
-    # "9:10pm" style, no leading zero, lower-case am/pm
-    s = dt.strftime("%I:%M%p").lower()
-    return f"**{s.lstrip('0')}**"
+    # list schema
+    if isinstance(data, list) and data:
+        first = data[0]
+        title = first.get("title") or first.get("name") or "Untitled Event"
+        iso = first.get("start_at") or first.get("start") or ""
+        if iso:
+            return EventConfig(title=title, iso=iso)
 
-def _human_delta(delta: timedelta) -> str:
-    secs = int(abs(delta).total_seconds())
-    days, rem = divmod(secs, 86400)
-    hours, rem = divmod(rem, 3600)
+    return None
+
+
+def _fmt_clock(dt: datetime, label: str, with_weekday: bool = False) -> str:
+    """12h clock like '8:00pm —EST— Friday' (weekday optional)."""
+    # %-I is not portable on Windows; use %#I for Windows. Render runs Linux, but we’ll be safe.
+    hour_fmt = "%-I:%M%p" if hasattr(dt, "strftime") else "%I:%M%p"
+    try:
+        time_txt = dt.strftime(hour_fmt)  # Linux
+    except ValueError:
+        time_txt = dt.strftime("%#I:%M%p")  # Windows fallback
+
+    time_txt = time_txt.lower()
+    if with_weekday:
+        return f"🕒 {time_txt} —{label}— {dt.strftime('%A')}"
+    return f"🕒 {time_txt} —{label}—"
+
+
+def _fmt_remaining(event_local: datetime, now_local: datetime) -> str:
+    """'time remaining 21h 15m' or 'started 2h 3m ago'."""
+    delta = event_local - now_local
+    secs = int(delta.total_seconds())
+    sign = "" if secs >= 0 else "started "
+    secs = abs(secs)
+    hours, rem = divmod(secs, 3600)
     mins, _ = divmod(rem, 60)
-    parts = []
-    if days: parts.append(f"{days}d")
-    if hours: parts.append(f"{hours}h")
-    if mins or not parts: parts.append(f"{mins}m")
-    return " ".join(parts)
+    if sign == "":
+        return f"• time remaining {hours}h {mins}m"
+    return f"• started {hours}h {mins}m ago"
 
-class EventCog(commands.Cog):
+
+class Events(commands.Cog):
+    """Simple /event readout using the first entry in data/events.json."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="event", description="Show the configured event time across ET/CT/MT/PT + countdown.")
-    async def event(self, interaction: discord.Interaction):
-        evmap = _load_events()
-        picked = _pick_active_event(evmap)
-        if not picked:
+    @app_commands.command(name="event", description="Show the next configured event with local times.")
+    async def event(self, interaction: discord.Interaction) -> None:
+        cfg = _load_first_event()
+        if not cfg or not cfg.iso:
             await interaction.response.send_message(
-                "No events are configured yet. Add one in `data/events.json`.",
-                ephemeral=True
+                "No event configured yet. Add one to `data/events.json`.", ephemeral=True
             )
             return
 
-        title, dt_event = picked
+        # Parse the ISO string. If no tz, assume UTC.
+        try:
+            event_dt = datetime.fromisoformat(cfg.iso)
+        except ValueError:
+            await interaction.response.send_message(
+                "Event time in `events.json` is not valid ISO-8601.", ephemeral=True
+            )
+            return
 
-        # Normalize event dt to ET for the header line
-        dt_et = dt_event.astimezone(ZoneInfo("America/New_York"))
+        if event_dt.tzinfo is None:
+            event_dt = event_dt.replace(tzinfo=timezone.utc)
 
-        # Build the EVENT stanza
+        # Build the header date in the event’s own timezone (its offset/zone)
+        header_date = event_dt.strftime("%A — %B, %d, %Y")
+
         lines: list[str] = []
-        lines.append(f"**{title}** is on **{dt_et.strftime('%A')}** — {dt_et.strftime('%B')}, {dt_et.strftime('%d').lstrip('0')}, {dt_et.strftime('%Y')} — at:")
-        for _, tz, label in ZONE_ORDER:
-            t_local = dt_event.astimezone(tz)
-            lines.append(f"{CLOCK} {_fmt_time(t_local)} —{label}—")
+        lines.append(f"**{cfg.title}** is on **{event_dt.strftime('%A')}** — {event_dt.strftime('%B, %d, %Y')} — at:")
 
-        # Build the CURRENT TIME + countdown stanza
+        # Show per-zone time with weekday label after each line
+        for label, zone in TZS.items():
+            local = event_dt.astimezone(zone)
+            lines.append(_fmt_clock(local, label, with_weekday=True))
+
+        # Current time section + remaining per zone
+        lines.append("")  # spacer
         now_utc = datetime.now(timezone.utc)
-        lines.append("")  # blank line
-        lines.append(_fmt_date_line(now_utc.astimezone(ZoneInfo("America/New_York"))))
+        today_line = f"• Today is **{now_utc.astimezone(TZS['EST']).strftime('%A')}** — {now_utc.astimezone(TZS['EST']).strftime('%B, %d, %Y')} — and the current time is:"
+        lines.append(today_line)
 
-        for _, tz, label in ZONE_ORDER:
-            now_local = now_utc.astimezone(tz)
-            evt_local = dt_event.astimezone(tz)
-            delta = evt_local - now_local
-            if delta.total_seconds() >= 0:
-                remain = _human_delta(delta)
-                lines.append(f"{CLOCK} {_fmt_time(now_local)} —{label}—  • time remaining {remain}")
-            else:
-                ago = _human_delta(delta)
-                lines.append(f"{CLOCK} {_fmt_time(now_local)} —{label}—  • already happened ({ago} ago)")
+        for label, zone in TZS.items():
+            now_local = now_utc.astimezone(zone)
+            event_local = event_dt.astimezone(zone)
+            clock = _fmt_clock(now_local, label, with_weekday=False)
+            rem = _fmt_remaining(event_local, now_local)
+            lines.append(f"{clock}  {rem}")
 
-        await interaction.response.send_message("\n".join(f"• {ln}" if ln.startswith(CLOCK) is False and ln and not ln.startswith("**") else ln for ln in lines))
+        await interaction.response.send_message("\n".join(lines))
+
+    # Optional admin helper to reload without redeploy (kept simple)
+    @app_commands.command(name="event_status", description="Admin: show which event is configured.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def event_status(self, interaction: discord.Interaction) -> None:
+        cfg = _load_first_event()
+        if not cfg:
+            await interaction.response.send_message("No event configured.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"Loaded event: **{cfg.title}** → `{cfg.iso}` from `data/events.json`.", ephemeral=True
+        )
+
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(EventCog(bot))
+    await bot.add_cog(Events(bot))
