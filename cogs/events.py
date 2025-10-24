@@ -1,61 +1,110 @@
-# --- add/replace this helper in cogs/events.py ---
+# cogs/events.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+import discord
+from discord import app_commands
+from discord.ext import commands
+from zoneinfo import ZoneInfo
 
-from datetime import datetime, timezone
-import pytz  # you already import this earlier for the zone conversions
+US_ZONES = [
+    ("EST", "America/New_York"),
+    ("CST", "America/Chicago"),
+    ("MST", "America/Denver"),
+    ("PST", "America/Los_Angeles"),
+]
 
-CLOCK = "🕒"
+def _safe_read_events() -> dict[str, str]:
+    p = Path("data/events.json")
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
-def _fmt_clock(dt: datetime, tz: str) -> tuple[str, str]:
-    """Return (time_str_bold, day_str_bold) for a dt localized to tz."""
-    z = pytz.timezone(tz)
-    local = dt.astimezone(z)
-    # 9:07pm style, bold
-    return f"**{local.strftime('%-I:%M%p').lower()}**", f"**{local.strftime('%A')}**"
+def _human_day(dt: datetime, tz: ZoneInfo) -> str:
+    return dt.astimezone(tz).strftime("%A")  # e.g. Friday
 
-def _fmt_remaining(now_utc: datetime, target_utc: datetime, tz: str) -> str:
-    """Return italicized 'time remaining' line for tz."""
-    z = pytz.timezone(tz)
-    now_local = now_utc.astimezone(z)
-    tgt_local = target_utc.astimezone(z)
-    delta = max(tgt_local - now_local, datetime.resolution)
+def _fmt_time(dt: datetime, tz: ZoneInfo) -> str:
+    return dt.astimezone(tz).strftime("%-I:%M%p").lower()  # 8:00pm
+
+def _fmt_date(dt: datetime, tz: ZoneInfo) -> str:
+    return dt.astimezone(tz).strftime("%B, %-d, %Y")  # October, 24, 2025
+
+def _fmt_remaining(now_utc: datetime, target_utc: datetime, tz: ZoneInfo) -> str:
+    # clamp negative to 0
+    delta = target_utc - now_utc
+    if delta.total_seconds() < 0:
+        return "*started already*"
     hours = int(delta.total_seconds() // 3600)
     mins = int((delta.total_seconds() % 3600) // 60)
-    return f"*• time remaining {hours}h {mins}m*"
+    return f"*time remaining {hours}h {mins}m*"
 
 def render_event_message(title: str, start_dt_utc: datetime, now_utc: datetime) -> str:
-    """
-    Returns a message with:
-    1) headline + four timezones (EST/CST/MST/PST) with **bold** times and **bold** day
-    2) 'Today is <Day> — <date>' block with current times and *italic* time-remaining
-    """
-    tzs = [
-        ("EST", "America/New_York"),
-        ("CST", "America/Chicago"),
-        ("MST", "America/Denver"),
-        ("PST", "America/Los_Angeles"),
-    ]
-
-    # headline with event day (bold) and date
-    event_day_bold = f"**{start_dt_utc.astimezone(pytz.timezone('America/New_York')).strftime('%A')}**"
-    event_date = start_dt_utc.astimezone(pytz.timezone('America/New_York')).strftime("%B, %-d, %Y")
+    # Header (EST for the date line)
+    est = ZoneInfo("America/New_York")
+    pretty_date = _fmt_date(start_dt_utc, est)
+    header_day = _human_day(start_dt_utc, est)
     lines = []
-    lines.append(f"**{title}** is on {event_day_bold} — {event_date} — at:")
+    lines.append(f"**{title}** is on **{header_day}** — {pretty_date} — at:")
 
-    # event times per tz
-    for label, zone in tzs:
-        t_str, day_str = _fmt_clock(start_dt_utc, zone)
-        lines.append(f"{CLOCK} {t_str} —{label}— {day_str}")
+    # Times per zone (bold time + day)
+    for label, zone in US_ZONES:
+        tz = ZoneInfo(zone)
+        t = _fmt_time(start_dt_utc, tz)
+        d = _human_day(start_dt_utc, tz)
+        lines.append(f"• 🕒 **{t}** —**{label}**— **{d}**")
 
-    lines.append("")  # blank line
+    # Now block + remaining (italic)
+    now_day = _human_day(now_utc, est)
+    now_date = _fmt_date(now_utc, est)
+    lines.append("")
+    lines.append(f"• Today is **{now_day}** — {now_date} — and the current time is:")
 
-    # 'Today is' block (mirror /time style)
-    today_label = f"**{now_utc.astimezone(pytz.timezone('America/New_York')).strftime('%A')}**"
-    today_date  = now_utc.astimezone(pytz.timezone('America/New_York')).strftime("%B, %-d, %Y")
-    lines.append(f"• Today is {today_label} — {today_date} — and the current time is:")
-
-    for label, zone in tzs:
-        now_str, _ = _fmt_clock(now_utc, zone)   # bold time
-        rem = _fmt_remaining(now_utc, start_dt_utc, zone)  # *italic* remaining
-        lines.append(f"{CLOCK} {now_str} —{label}—  {rem}")
+    for label, zone in US_ZONES:
+        tz = ZoneInfo(zone)
+        now_t = _fmt_time(now_utc, tz)
+        rem = _fmt_remaining(now_utc, start_dt_utc, tz)
+        lines.append(f"• 🕒 **{now_t}** —**{label}**—  • {rem}")
 
     return "\n".join(lines)
+
+class Events(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    def _get_next_event(self) -> tuple[str, datetime] | None:
+        """
+        data/events.json:
+        {
+          "Fight Night on Dallas PC": "2025-10-24T20:00:00-04:00",
+          "Another Title": "2025-11-02T19:30:00-05:00"
+        }
+        The first entry is treated as “next”.
+        """
+        data = _safe_read_events()
+        if not data:
+            return None
+        title, iso_str = next(iter(data.items()))
+        try:
+            dt = datetime.fromisoformat(iso_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt_utc = dt.astimezone(timezone.utc)
+            return (title, dt_utc)
+        except Exception:
+            return None
+
+    @app_commands.command(name="event", description="Show the next event time in US zones.")
+    async def event(self, interaction: discord.Interaction):
+        got = self._get_next_event()
+        if not got:
+            await interaction.response.send_message("No event found in data/events.json.", ephemeral=True)
+            return
+        title, start_dt_utc = got
+        message = render_event_message(title, start_dt_utc, datetime.now(timezone.utc))
+        await interaction.response.send_message(message)
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Events(bot))
