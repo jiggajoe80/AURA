@@ -1,159 +1,61 @@
-# cogs/events.py
-from __future__ import annotations
+# --- add/replace this helper in cogs/events.py ---
 
-import json
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict, Tuple
+import pytz  # you already import this earlier for the zone conversions
 
-import discord
-from discord import app_commands
-from discord.ext import commands
-from zoneinfo import ZoneInfo
+CLOCK = "🕒"
 
+def _fmt_clock(dt: datetime, tz: str) -> tuple[str, str]:
+    """Return (time_str_bold, day_str_bold) for a dt localized to tz."""
+    z = pytz.timezone(tz)
+    local = dt.astimezone(z)
+    # 9:07pm style, bold
+    return f"**{local.strftime('%-I:%M%p').lower()}**", f"**{local.strftime('%A')}**"
 
-DATA_FILE = Path("data/events.json")
+def _fmt_remaining(now_utc: datetime, target_utc: datetime, tz: str) -> str:
+    """Return italicized 'time remaining' line for tz."""
+    z = pytz.timezone(tz)
+    now_local = now_utc.astimezone(z)
+    tgt_local = target_utc.astimezone(z)
+    delta = max(tgt_local - now_local, datetime.resolution)
+    hours = int(delta.total_seconds() // 3600)
+    mins = int((delta.total_seconds() % 3600) // 60)
+    return f"*• time remaining {hours}h {mins}m*"
 
-# Four core US timezones we’ll display
-TZS: Dict[str, ZoneInfo] = {
-    "EST": ZoneInfo("America/New_York"),
-    "CST": ZoneInfo("America/Chicago"),
-    "MST": ZoneInfo("America/Denver"),
-    "PST": ZoneInfo("America/Los_Angeles"),
-}
-
-
-@dataclass
-class EventConfig:
-    title: str
-    iso: str  # ISO-8601 string (may include offset, e.g. 2025-10-24T20:00:00-04:00)
-
-
-def _load_first_event() -> EventConfig | None:
+def render_event_message(title: str, start_dt_utc: datetime, now_utc: datetime) -> str:
     """
-    events.json can be either:
-      • {"My Event Title": "2025-10-24T20:00:00-04:00"}
-      • [{"title": "My Event Title", "start_at": "2025-10-24T20:00:00-04:00"}, ...]
-    We grab the first entry and ignore the rest for the simple /event command.
+    Returns a message with:
+    1) headline + four timezones (EST/CST/MST/PST) with **bold** times and **bold** day
+    2) 'Today is <Day> — <date>' block with current times and *italic* time-remaining
     """
-    if not DATA_FILE.exists():
-        return None
+    tzs = [
+        ("EST", "America/New_York"),
+        ("CST", "America/Chicago"),
+        ("MST", "America/Denver"),
+        ("PST", "America/Los_Angeles"),
+    ]
 
-    with DATA_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    # headline with event day (bold) and date
+    event_day_bold = f"**{start_dt_utc.astimezone(pytz.timezone('America/New_York')).strftime('%A')}**"
+    event_date = start_dt_utc.astimezone(pytz.timezone('America/New_York')).strftime("%B, %-d, %Y")
+    lines = []
+    lines.append(f"**{title}** is on {event_day_bold} — {event_date} — at:")
 
-    # dict schema
-    if isinstance(data, dict):
-        if not data:
-            return None
-        title, iso = next(iter(data.items()))
-        return EventConfig(title=title, iso=iso)
+    # event times per tz
+    for label, zone in tzs:
+        t_str, day_str = _fmt_clock(start_dt_utc, zone)
+        lines.append(f"{CLOCK} {t_str} —{label}— {day_str}")
 
-    # list schema
-    if isinstance(data, list) and data:
-        first = data[0]
-        title = first.get("title") or first.get("name") or "Untitled Event"
-        iso = first.get("start_at") or first.get("start") or ""
-        if iso:
-            return EventConfig(title=title, iso=iso)
+    lines.append("")  # blank line
 
-    return None
+    # 'Today is' block (mirror /time style)
+    today_label = f"**{now_utc.astimezone(pytz.timezone('America/New_York')).strftime('%A')}**"
+    today_date  = now_utc.astimezone(pytz.timezone('America/New_York')).strftime("%B, %-d, %Y")
+    lines.append(f"• Today is {today_label} — {today_date} — and the current time is:")
 
+    for label, zone in tzs:
+        now_str, _ = _fmt_clock(now_utc, zone)   # bold time
+        rem = _fmt_remaining(now_utc, start_dt_utc, zone)  # *italic* remaining
+        lines.append(f"{CLOCK} {now_str} —{label}—  {rem}")
 
-def _fmt_clock(dt: datetime, label: str, with_weekday: bool = False) -> str:
-    """12h clock like '8:00pm —EST— Friday' (weekday optional)."""
-    # %-I is not portable on Windows; use %#I for Windows. Render runs Linux, but we’ll be safe.
-    hour_fmt = "%-I:%M%p" if hasattr(dt, "strftime") else "%I:%M%p"
-    try:
-        time_txt = dt.strftime(hour_fmt)  # Linux
-    except ValueError:
-        time_txt = dt.strftime("%#I:%M%p")  # Windows fallback
-
-    time_txt = time_txt.lower()
-    if with_weekday:
-        return f"🕒 {time_txt} —{label}— {dt.strftime('%A')}"
-    return f"🕒 {time_txt} —{label}—"
-
-
-def _fmt_remaining(event_local: datetime, now_local: datetime) -> str:
-    """'time remaining 21h 15m' or 'started 2h 3m ago'."""
-    delta = event_local - now_local
-    secs = int(delta.total_seconds())
-    sign = "" if secs >= 0 else "started "
-    secs = abs(secs)
-    hours, rem = divmod(secs, 3600)
-    mins, _ = divmod(rem, 60)
-    if sign == "":
-        return f"• time remaining {hours}h {mins}m"
-    return f"• started {hours}h {mins}m ago"
-
-
-class Events(commands.Cog):
-    """Simple /event readout using the first entry in data/events.json."""
-
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-
-    @app_commands.command(name="event", description="Show the next configured event with local times.")
-    async def event(self, interaction: discord.Interaction) -> None:
-        cfg = _load_first_event()
-        if not cfg or not cfg.iso:
-            await interaction.response.send_message(
-                "No event configured yet. Add one to `data/events.json`.", ephemeral=True
-            )
-            return
-
-        # Parse the ISO string. If no tz, assume UTC.
-        try:
-            event_dt = datetime.fromisoformat(cfg.iso)
-        except ValueError:
-            await interaction.response.send_message(
-                "Event time in `events.json` is not valid ISO-8601.", ephemeral=True
-            )
-            return
-
-        if event_dt.tzinfo is None:
-            event_dt = event_dt.replace(tzinfo=timezone.utc)
-
-        # Build the header date in the event’s own timezone (its offset/zone)
-        header_date = event_dt.strftime("%A — %B, %d, %Y")
-
-        lines: list[str] = []
-        lines.append(f"**{cfg.title}** is on **{event_dt.strftime('%A')}** — {event_dt.strftime('%B, %d, %Y')} — at:")
-
-        # Show per-zone time with weekday label after each line
-        for label, zone in TZS.items():
-            local = event_dt.astimezone(zone)
-            lines.append(_fmt_clock(local, label, with_weekday=True))
-
-        # Current time section + remaining per zone
-        lines.append("")  # spacer
-        now_utc = datetime.now(timezone.utc)
-        today_line = f"• Today is **{now_utc.astimezone(TZS['EST']).strftime('%A')}** — {now_utc.astimezone(TZS['EST']).strftime('%B, %d, %Y')} — and the current time is:"
-        lines.append(today_line)
-
-        for label, zone in TZS.items():
-            now_local = now_utc.astimezone(zone)
-            event_local = event_dt.astimezone(zone)
-            clock = _fmt_clock(now_local, label, with_weekday=False)
-            rem = _fmt_remaining(event_local, now_local)
-            lines.append(f"{clock}  {rem}")
-
-        await interaction.response.send_message("\n".join(lines))
-
-    # Optional admin helper to reload without redeploy (kept simple)
-    @app_commands.command(name="event_status", description="Admin: show which event is configured.")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def event_status(self, interaction: discord.Interaction) -> None:
-        cfg = _load_first_event()
-        if not cfg:
-            await interaction.response.send_message("No event configured.", ephemeral=True)
-            return
-        await interaction.response.send_message(
-            f"Loaded event: **{cfg.title}** → `{cfg.iso}` from `data/events.json`.", ephemeral=True
-        )
-
-
-async def setup(bot: commands.Bot):
-    await bot.add_cog(Events(bot))
+    return "\n".join(lines)
