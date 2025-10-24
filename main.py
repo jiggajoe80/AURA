@@ -54,6 +54,26 @@ def load_lines_or_default(file, fallback):
     logger.info(f"Loaded {len(lines)} lines from {file}")
     return lines
 
+# --- jokes helpers (append under HELPERS) ------------------------------------
+def _split_joke(line: str) -> tuple[str, str]:
+    """
+    Split a joke line of the form 'question||answer'.
+    If no punchline is present, returns ('line', '').
+    """
+    parts = [p.strip() for p in str(line).split("||", 1)]
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return str(line).strip(), ""
+
+def _format_joke(line: str) -> str:
+    """Render a Discord-friendly, spoilered punchline message."""
+    q, a = _split_joke(line)
+    if a:
+        return f"**Q:** {q} →\n**A:** ||{a}||"
+    # Fallback (no punchline available)
+    return q
+# ----------------------------------------------------------------------------- 
+
 # ────────────── KEEP ALIVE ──────────────
 app = Flask("")
 
@@ -135,13 +155,31 @@ class AuraBot(commands.Bot):
         self.used_hourly_today.append(choice)
         return choice
 
-    def get_next_joke(self):
-        self.reset_daily_pools()
-        available = [j for j in self.jokes_pool if j not in self.used_jokes_today] or self.jokes_pool.copy()
-        choice = random.choice(available)
-        self.used_jokes_today.append(choice)
-        # short hourly form (only question if split)
-        return choice.split("||", 1)[0].strip() if "||" in choice else choice
+    def get_next_joke(self) -> str | None:
+    """
+    Pick one joke and return it formatted with a spoilered punchline,
+    matching the /joke command style.
+    Accepts data/jokes.json as either:
+      - [{"text":"Question??||Punchline."}, ...]  OR
+      - ["Question??||Punchline.", ...]
+    """
+    self.reset_daily_pools()
+
+    # If you want to keep using the in-memory pool, we’ll refill it from JSON when empty.
+    if not self.jokes_pool:
+        self.jokes_pool = _load_items_from_json("jokes.json") or []
+
+    if not self.jokes_pool:
+        return None
+
+    raw = random.choice(self.jokes_pool)
+    line = raw.get("text") if isinstance(raw, dict) else str(raw)
+
+    # Track usage by the full line string
+    self.used_jokes_today.append(line)
+
+    # Format: **Q:** …  →  **A:** ||…||
+    return _format_joke(line)
 
     def check_cooldown(self, user_id, command_name):
         key = f"{user_id}_{command_name}"
@@ -258,10 +296,42 @@ async def rotate_presence():
 
 @tasks.loop(minutes=1)
 async def check_hourly_post():
+    """
+    Post once per hour (if the channel has been quiet for 30+ minutes),
+    alternating between a joke and an hourly prompt.
+    Jokes include a spoilered punchline so they match /joke style.
+    """
     now = datetime.utcnow()
     channel = bot.get_channel(AUTOPOST_CHANNEL_ID)
     if not channel:
         return
+
+    # how long the channel has been quiet
+    last_activity = bot.last_channel_activity.get(AUTOPOST_CHANNEL_ID)
+    inactive_seconds = (now - last_activity).total_seconds() if last_activity else float("inf")
+
+    # how long since our last post
+    since_last = (now - bot.last_hourly_post).total_seconds() if bot.last_hourly_post else float("inf")
+
+    # Only post if: quiet ≥ 30m and last post ≥ 60m
+    if inactive_seconds >= 1800 and since_last >= 3600:
+        if isinstance(channel, (discord.TextChannel, discord.Thread)):
+            try:
+                # flip branch: joke <-> hourly
+                bot._hourly_flip = not bot._hourly_flip
+
+                message: str | None = None
+                if bot._hourly_flip:
+                    message = bot.get_next_joke()  # may return None if no jokes loaded
+
+                if not message:
+                    message = bot.get_next_hourly()
+
+                await channel.send(message)
+                bot.last_hourly_post = now
+                logger.info(f"Posted {'joke' if bot._hourly_flip else 'hourly'}: {message}")
+            except Exception as e:
+                logger.error(f"Hourly post error: {e}")
 
     last_activity = bot.last_channel_activity.get(AUTOPOST_CHANNEL_ID)
     idle = (now - last_activity).total_seconds() if last_activity else float("inf")
