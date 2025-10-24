@@ -14,55 +14,59 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 JOKES_FILE = DATA_DIR / "jokes.json"
 
 
+def _clean_text(s: str) -> str:
+    """Strip stray delimiters like || and extra spaces."""
+    s = s.strip()
+    while s.endswith("||") or s.endswith("|"):
+        s = s[:-1].rstrip("|").rstrip()
+    return s
+
+
 def _normalize_jokes(raw):
-    """
-    Accept any of these shapes and normalize into list[dict] with fields:
-      {"setup": "...", "punchline": "..."}  OR  {"text": "..."}
-    Supported inputs:
-      - ["Q || A", "single liner", ...]
-      - [{"text": "Q || A"}, {"text": "single liner"}]
-      - [{"setup": "...", "punchline": "..."}, ...]
-      - {"items": [ <any of the above> ]}
-    """
-    # unwrap {"items": [...]}
+    """Normalize any supported format into a clean list of jokes."""
     if isinstance(raw, dict) and "items" in raw:
         raw = raw["items"]
 
     norm = []
     if isinstance(raw, list):
         for item in raw:
-            # string entry
+            # plain string line
             if isinstance(item, str):
-                if "||" in item:
-                    setup, punch = [s.strip() for s in item.split("||", 1)]
+                txt = _clean_text(item)
+                if "||" in txt:
+                    setup, punch = [_clean_text(x) for x in txt.split("||", 1)]
                     norm.append({"setup": setup, "punchline": punch})
                 else:
-                    norm.append({"text": item.strip()})
+                    norm.append({"text": txt})
                 continue
 
-            # object entry
+            # object line
             if isinstance(item, dict):
                 if "setup" in item and "punchline" in item:
-                    norm.append({"setup": item["setup"].strip(),
-                                 "punchline": item["punchline"].strip()})
+                    norm.append({
+                        "setup": _clean_text(item["setup"]),
+                        "punchline": _clean_text(item["punchline"]),
+                    })
                 elif "text" in item and isinstance(item["text"], str):
-                    txt = item["text"].strip()
+                    txt = _clean_text(item["text"])
                     if "||" in txt:
-                        setup, punch = [s.strip() for s in txt.split("||", 1)]
+                        setup, punch = [_clean_text(x) for x in txt.split("||", 1)]
                         norm.append({"setup": setup, "punchline": punch})
                     else:
                         norm.append({"text": txt})
-                # ignore unknown shapes silently
     return norm
 
 
 class JokesCog(commands.Cog):
+    """Cog that delivers random jokes from data/jokes.json"""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.jokes = []
         self._load()
 
     def _load(self):
+        """Load and normalize jokes from file."""
         try:
             with open(JOKES_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -75,15 +79,17 @@ class JokesCog(commands.Cog):
             logger.exception("Failed to load jokes: %s", e)
             self.jokes = []
 
-    @app_commands.command(name="joke", description="Tell a quick joke.")
+    @app_commands.command(name="joke", description="Tell a random Aura joke.")
     async def joke(self, interaction: discord.Interaction):
+        """Send a random joke."""
         if not self.jokes:
             await interaction.response.send_message("No jokes loaded yet.", ephemeral=True)
             return
 
         choice = random.choice(self.jokes)
+
         if "setup" in choice and "punchline" in choice:
-            msg = f"**Q:** {choice['setup']}\n**A:** {choice['punchline']}"
+            msg = f"**Q:** {choice['setup']} →\n**A:** ||{choice['punchline']}||"
         else:
             msg = choice["text"]
 
@@ -92,7 +98,10 @@ class JokesCog(commands.Cog):
     @app_commands.command(name="joke_status", description="(Admin) Show joke pool size.")
     @app_commands.default_permissions(manage_guild=True)
     async def joke_status(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"Jokes loaded: **{len(self.jokes)}**", ephemeral=True)
+        """Admin diagnostic: shows how many jokes are loaded."""
+        await interaction.response.send_message(
+            f"Jokes loaded: **{len(self.jokes)}**", ephemeral=True
+        )
 
 
 async def setup(bot: commands.Bot):
