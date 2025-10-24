@@ -1,131 +1,167 @@
+# cogs/auto_reply.py
 import json
 import random
-import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
-logger = logging.getLogger("Aura")
+# ---------------------------
+# Config
+# ---------------------------
+DATA_FILE = Path("data/auto_reply_quips.json")
 
-# === Config ===
-COOLDOWN_SECONDS = 10  # you asked for 10s
-# Set to an empty set to allow all channels, or include your ID(s) here:
-ALLOWED_CHANNELS = {1399840085536407602}  # <-- your channel id
+# channel allow-list (server text channel IDs)
+ALLOWED_CHANNELS = {1399840085536407602}
 
-DATA_FILE = Path(__file__).parent.parent / "data" / "auto_reply_quips.json"
+# seconds between replies in the same channel
+COOLDOWN_SECONDS = 10
+
+# cooldown UX
+COOLDOWN_REACTION = "⏳"       # reaction to add when on cooldown
+SELF_DELETE_NOTE = True       # set True to also send a short note
+SELF_DELETE_AFTER = 5          # seconds to keep the note, if enabled
 
 
 def _load_quips(path: Path) -> list[str]:
-    """Accepts either:
-       { "items": [ { "text": "..." }, ... ] }
-       or a simple [ "line1", "line2", ... ] array.
+    """Load quips from minimal JSON.
+
+    Accepts either:
+      { "items": [ { "text": "..." }, ... ] }
+    or
+      [ "line1", "line2", ... ]
     """
     try:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, list):
-            return [str(x) for x in data if isinstance(x, str)]
-        if isinstance(data, dict) and "items" in data:
-            items = data["items"]
-            # items may be list of dicts with "text"
-            if isinstance(items, list):
-                out = []
-                for it in items:
-                    if isinstance(it, dict) and "text" in it:
-                        out.append(str(it["text"]))
-                return out
-    except Exception as e:
-        logger.exception(f"Failed to load quips from {path}: {e}")
+    except Exception:
+        return []
+
+    if isinstance(data, list):
+        # simple list of strings
+        return [str(x) for x in data if isinstance(x, str)]
+
+    if isinstance(data, dict) and "items" in data and isinstance(data["items"], list):
+        out = []
+        for item in data["items"]:
+            if isinstance(item, dict) and "text" in item:
+                out.append(str(item["text"]))
+        return out
+
     return []
 
 
 class AutoReply(commands.Cog):
+    """Ping/reply auto-responder with per-channel cooldown."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.quips: list[str] = _load_quips(DATA_FILE)
         self.last_reply_at: dict[int, datetime] = {}  # channel_id -> time
-        logger.info(f"[auto-reply] loaded {len(self.quips)} quips from {DATA_FILE.name}")
 
-    # --- helpers -------------------------------------------------------------
+    # ---------------------------
+    # Helpers
+    # ---------------------------
+    def _is_allowed_channel(self, channel_id: int) -> bool:
+        return channel_id in ALLOWED_CHANNELS
 
-    def _cooldown_ok(self, channel_id: int) -> bool:
+    def _is_cooldown(self, channel_id: int) -> bool:
+        now = datetime.utcnow()
         last = self.last_reply_at.get(channel_id)
         if not last:
+            return False
+        return (now - last) < timedelta(seconds=COOLDOWN_SECONDS)
+
+    def _mark_replied(self, channel_id: int) -> None:
+        self.last_reply_at[channel_id] = datetime.utcnow()
+
+    def _message_mentions_or_replies_to_bot(self, message: discord.Message) -> bool:
+        # Mention
+        if self.bot.user and self.bot.user in message.mentions:
             return True
-        return (datetime.utcnow() - last) >= timedelta(seconds=COOLDOWN_SECONDS)
+        # Reply to Aura
+        if message.reference and isinstance(message.reference.resolved, discord.Message):
+            ref: discord.Message = message.reference.resolved
+            if ref.author and self.bot.user and ref.author.id == self.bot.user.id:
+                return True
+        return False
 
-    def _should_handle(self, message: discord.Message) -> tuple[bool, str]:
-        # 1) ignore bots (including Aura)
-        if message.author.bot:
-            return False, "author_is_bot"
-
-        # 2) channel allow-list
-        if ALLOWED_CHANNELS and message.channel.id not in ALLOWED_CHANNELS:
-            return False, f"channel_not_allowed:{message.channel.id}"
-
-        # 3) must be a reply to Aura OR @mention Aura
-        mentioned = self.bot.user in getattr(message, "mentions", [])
-        replied_to_bot = False
-        if message.reference and message.reference.resolved:
-            replied_to_bot = getattr(message.reference.resolved, "author", None) == self.bot.user
-
-        if not (mentioned or replied_to_bot):
-            return False, "no_mention_or_reply"
-
-        # 4) cooldown
-        if not self._cooldown_ok(message.channel.id):
-            return False, "cooldown"
-
-        return True, "ok"
-
-    # --- listener ------------------------------------------------------------
-
+    # ---------------------------
+    # Core listener
+    # ---------------------------
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        ok, reason = self._should_handle(message)
-        if not ok:
-            # Verbose debug — comment out if you find it noisy
-            logger.debug(f"[auto-reply] ignored msg id={message.id} reason={reason}")
+        # ignore own messages and DMs
+        if message.author.bot or not isinstance(message.channel, (discord.TextChannel, discord.Thread)):
             return
 
+        channel_id = message.channel.id if isinstance(message.channel, discord.TextChannel) else message.channel.parent_id
+        if not channel_id:
+            return
+
+        if not self._is_allowed_channel(channel_id):
+            return
+
+        if not self._message_mentions_or_replies_to_bot(message):
+            return
+
+        # cooldown handling
+        if self._is_cooldown(channel_id):
+            try:
+                if COOLDOWN_REACTION:
+                    await message.add_reaction(COOLDOWN_REACTION)
+            except Exception:
+                pass
+
+            if SELF_DELETE_NOTE:
+                try:
+                    note = await message.reply(f"⏳ Cooling down {COOLDOWN_SECONDS}s…", mention_author=False)
+                    await note.delete(delay=SELF_DELETE_AFTER)
+                except Exception:
+                    pass
+            return
+
+        # pick a quip and reply
         if not self.quips:
-            logger.warning("[auto-reply] no quips loaded; nothing to say")
-            return
+            return  # nothing to say
 
-        text = random.choice(self.quips)
+        quip = random.choice(self.quips)
         try:
-            # Reply to the user’s message (keeps the thread)
-            await message.reply(text, mention_author=False)
-            self.last_reply_at[message.channel.id] = datetime.utcnow()
-            logger.info(f"[auto-reply] replied in #{getattr(message.channel, 'name', message.channel.id)}")
-        except Exception as e:
-            logger.exception(f"[auto-reply] failed to send reply: {e}")
+            await message.reply(quip, mention_author=False)
+        finally:
+            self._mark_replied(channel_id)
 
-    # --- slash commands ------------------------------------------------------
-
-    @app_commands.command(name="auto_reply_status", description="Show auto-reply settings/status.")
+    # ---------------------------
+    # Diagnostics (global slash)
+    # ---------------------------
+    @discord.app_commands.command(name="auto_reply_status", description="Show auto-reply configuration.")
     async def auto_reply_status(self, interaction: discord.Interaction):
-        chs = ", ".join(str(x) for x in ALLOWED_CHANNELS) if ALLOWED_CHANNELS else "ALL"
-        cd = f"{COOLDOWN_SECONDS}s"
-        count = len(self.quips)
-        msg = f"Auto-reply: channels={chs} • cooldown={cd} • quips={count}"
-        await interaction.response.send_message(msg, ephemeral=True)
+        alive = "loaded" if self.quips else "empty"
+        chans = ", ".join(str(cid) for cid in sorted(ALLOWED_CHANNELS)) or "none"
+        text = f"channels={chans} • cooldown={COOLDOWN_SECONDS}s • quips={alive}"
+        await interaction.response.send_message(text, ephemeral=True)
 
-    @app_commands.command(name="auto_reply_test", description="Force a test quip here.")
+    @discord.app_commands.command(name="auto_reply_test", description="Post a sample quip now.")
     async def auto_reply_test(self, interaction: discord.Interaction):
+        # try to post where the command ran
+        channel = interaction.channel
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            return await interaction.response.send_message("Wrong channel type.", ephemeral=True)
+
+        channel_id = channel.id if isinstance(channel, discord.TextChannel) else channel.parent_id
+        if channel_id not in ALLOWED_CHANNELS:
+            return await interaction.response.send_message("This channel is not in the allow-list.", ephemeral=True)
+
         if not self.quips:
-            await interaction.response.send_message("No quips loaded.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        text = random.choice(self.quips)
+            return await interaction.response.send_message("No quips loaded.", ephemeral=True)
+
+        quip = random.choice(self.quips)
+        await interaction.response.send_message("Sending…", ephemeral=True)
         try:
-            await interaction.channel.send(text)
-            await interaction.followup.send("Sent.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"Failed to send: {e}", ephemeral=True)
+            await channel.send(quip)
+        except Exception:
+            pass
 
 
 async def setup(bot: commands.Bot):
