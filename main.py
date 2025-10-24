@@ -23,12 +23,13 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('Aura')
-# --- Aura modular cogs (leave empty until we add Phase 2 modules) ---
+# near the top of main.py
 INITIAL_EXTENSIONS = [
-    "cogs.timezones",   # /time
-    "cogs.auto_reply",  # auto-reply module
-    "cogs.jokes",       # /joke
-    "cogs.events",      # /event
+    "cogs.auto_reply",
+    "cogs.events",
+    "cogs.jokes",
+    "cogs.fortunes",   # ← add this line
+    "cogs.timezones",
 ]
 
 # ===== JSON DATA LOADING (Phase 1) =====
