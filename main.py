@@ -24,7 +24,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger('Aura')
 # --- Aura modular cogs (leave empty until we add Phase 2 modules) ---
-INITIAL_EXTENSIONS = ["cogs.auto_reply"]
+INITIAL_EXTENSIONS = [
+    "cogs.auto_reply",
+    "cogs.timezones"
+]
 
 # ===== JSON DATA LOADING (Phase 1) =====
 DATA_DIR = Path(__file__).parent / "data"
