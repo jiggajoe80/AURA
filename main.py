@@ -19,10 +19,10 @@ logger = logging.getLogger("Aura")
 
 INITIAL_EXTENSIONS = [
     "cogs.auto_reply",
-    "cogs.events",
     "cogs.jokes",
+    "cogs.events",
     "cogs.fortunes",
-    "cogs.timezones",
+    "cogs.say"
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
