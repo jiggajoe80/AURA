@@ -260,15 +260,28 @@ async def rotate_presence():
 async def check_hourly_post():
     now = datetime.utcnow()
     channel = bot.get_channel(AUTOPOST_CHANNEL_ID)
-    if not channel: return
+    if not channel:
+        return
+
     last_activity = bot.last_channel_activity.get(AUTOPOST_CHANNEL_ID)
     idle = (now - last_activity).total_seconds() if last_activity else float("inf")
     since_last = (now - bot.last_hourly_post).total_seconds()
+
     if idle >= 1800 and since_last >= 3600:
         try:
             bot._hourly_flip = not bot._hourly_flip
             branch = "joke" if bot._hourly_flip and bot.jokes_pool else "hourly"
-            msg = bot.get_next_joke() if branch == "joke" else bot.get_next_hourly()
+
+            if branch == "joke":
+                joke = bot.get_next_joke()
+                if "||" in joke:
+                    q, a = joke.split("||", 1)
+                    msg = f"**Q:** {q.strip()} →\n**A:** ||{a.strip()}||"
+                else:
+                    msg = joke
+            else:
+                msg = bot.get_next_hourly()
+
             await channel.send(msg)
             bot.last_hourly_post = now
             logger.info(f"Posted {branch}: {msg}")
