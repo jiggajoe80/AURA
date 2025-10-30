@@ -17,13 +17,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Aura")
 
-INITIAL_EXTENSIONS = [
-    "cogs.auto_reply",
-    "cogs.jokes",
-    "cogs.events",
-    "cogs.fortunes",
-    "cogs.say"
-]
+ INITIAL_EXTENSIONS = [
+     "cogs.auto_reply",
+     "cogs.jokes",
+     "cogs.events",
+     "cogs.fortunes",
+-    "cogs.say"
++    "cogs.say",
++    "cogs.timezones"
+ ]
 
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = "AURA.PRESENCE.v2.json"
@@ -54,13 +56,25 @@ def load_lines_or_default(file, fallback):
     logger.info(f"Loaded {len(lines)} lines from {file}")
     return lines
 
-# ---- joke formatting (shared by hourly + /joke style) ------------------------
-def _split_joke(line: str) -> tuple[str, str]:
-    parts = [p.strip() for p in str(line).split("||", 1)]
-    return (parts[0], parts[1]) if len(parts) == 2 else (str(line).strip(), "")
+# ---- joke formatting (used by hourly posts) ---------------------------------
+def _split_joke_clean(line: str) -> tuple[str, str]:
+    """
+    Accepts lines that may already include spoiler bars like '||punch||'.
+    Returns (setup, punchline) with any stray trailing pipes removed so we
+    don't end up doubling bars when we wrap again.
+    """
+    raw = str(line).strip()
+    parts = raw.split("||", 1)
+    if len(parts) == 2:
+        setup = parts[0].strip().rstrip("|").rstrip()
+        punch = parts[1].strip()
+        while punch.endswith("||") or punch.endswith("|"):
+            punch = punch[:-1].rstrip("|").rstrip()
+        return setup, punch
+    return raw, ""
 
 def _format_joke(line: str) -> str:
-    q, a = _split_joke(line)
+    q, a = _split_joke_clean(line)
     return f"**Q:** {q} →\n**A:** ||{a}||" if a else q
 # -----------------------------------------------------------------------------
 
