@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Aura")
 
- INITIAL_EXTENSIONS = [
+INITIAL_EXTENSIONS = [
     "cogs.auto_reply",
     "cogs.jokes",
     "cogs.events",
