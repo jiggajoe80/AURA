@@ -16,7 +16,7 @@ DATA_FILE = Path("data/auto_reply_quips.json")
 ALLOWED_CHANNELS = {1399840085536407602}
 
 # seconds between replies in the same channel
-COOLDOWN_SECONDS = 10
+COOLDOWN_SECONDS = 5
 
 # cooldown UX
 COOLDOWN_REACTION = "⏳"       # reaction to add when on cooldown
