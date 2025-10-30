@@ -18,14 +18,13 @@ logging.basicConfig(
 logger = logging.getLogger("Aura")
 
  INITIAL_EXTENSIONS = [
-     "cogs.auto_reply",
-     "cogs.jokes",
-     "cogs.events",
-     "cogs.fortunes",
--    "cogs.say"
-+    "cogs.say",
-+    "cogs.timezones"
- ]
+    "cogs.auto_reply",
+    "cogs.jokes",
+    "cogs.events",
+    "cogs.fortunes",
+    "cogs.say",
+    "cogs.timezones"
+]
 
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = "AURA.PRESENCE.v2.json"
