@@ -187,20 +187,25 @@ class AuraBot(commands.Bot):
 
     # ───── Reminder Save/Load ─────
     def load_reminders(self):
-        try:
-            if os.path.exists(REMINDERS_FILE):
-                data = json.loads(open(REMINDERS_FILE, "r", encoding="utf-8").read())
-                self.reminders = [
-                    {
-                        "user_id": r["user_id"],
-                        "channel_id": r["channel_id"],
-                        "message": r["message"],
-                        "time": datetime.fromisoformat(r["time"])
-                    } for r in data
-                ]
-                logger.info(f"Loaded {len(self.reminders)} reminders")
-        except Exception as e:
-            logger.error(f"Error loading reminders: {e}")
+    try:
+        if os.path.exists(REMINDERS_FILE):
+            data = json.loads(open(REMINDERS_FILE, "r", encoding="utf-8").read())
+            self.reminders = []
+            for r in data:
+                t = datetime.fromisoformat(r["time"])
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                else:
+                    t = t.astimezone(timezone.utc)
+                self.reminders.append({
+                    "user_id": r["user_id"],
+                    "channel_id": r["channel_id"],
+                    "message": r["message"],
+                    "time": t
+                })
+            logger.info(f"Loaded {len(self.reminders)} reminders")
+    except Exception as e:
+        logger.error(f"Error loading reminders: {e}")
 
     def save_reminders(self):
         try:
