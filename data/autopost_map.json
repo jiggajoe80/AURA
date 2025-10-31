@@ -1,9 +1,4 @@
 {
-  // 🏠 The Left Lair (Production)
-  // Guild ID → Channel ID
   "1270856120377802793": "1399840085536407602",
-
-  // 🧪 AURA-DEV (Testing Server)
-  // Guild ID → Channel ID
   "1433879888359854245": "1433890538834104330"
 }
