@@ -23,7 +23,8 @@ INITIAL_EXTENSIONS = [
     "cogs.events",
     "cogs.fortunes",
     "cogs.say",
-    "cogs.timezones"
+    "cogs.timezones",
+    "cogs.remind"
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
