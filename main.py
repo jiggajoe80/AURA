@@ -185,8 +185,8 @@ class AuraBot(commands.Bot):
         self.cooldowns[key] = now + timedelta(seconds=5)
         return True, 0
 
-    # ───── Reminder Save/Load ─────
-    def load_reminders(self):
+   # ----- Reminder Save/Load -----
+def load_reminders(self):
     try:
         if os.path.exists(REMINDERS_FILE):
             data = json.loads(open(REMINDERS_FILE, "r", encoding="utf-8").read())
