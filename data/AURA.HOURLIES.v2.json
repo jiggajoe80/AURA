@@ -1,210 +1,60 @@
 {
   "type": "HOURLIES",
-  "version": "v2",
+  "version": "v3",
   "meta": {
     "source": "AURA",
-    "generated_at": "2025-10-22T13:47:55+00:00"
+    "generated_at": "2025-10-31T00:00:00+00:00"
   },
   "items": [
-    {
-      "id": "hourlies_0001",
-      "text": "Reminder: you’re still doing great, even if you forgot why you opened Discord 💚"
-    },
-    {
-      "id": "hourlies_0002",
-      "text": "I’ve analyzed the chat. Ninety-two percent vibes ☕"
-    },
-    {
-      "id": "hourlies_0003",
-      "text": "Good news: no one’s been weird for five whole minutes 🎉"
-    },
-    {
-      "id": "hourlies_0004",
-      "text": "Drink water. Not coffee. Okay, coffee’s fine. But then water 💧"
-    },
-    {
-      "id": "hourlies_0005",
-      "text": "If chaos had a calendar, this would still be your day 🗓️"
-    },
-    {
-      "id": "hourlies_0006",
-      "text": "Mood: low battery, high potential ⚡"
-    },
-    {
-      "id": "hourlies_0007",
-      "text": "Just checking in before you spiral productively 💻"
-    },
-    {
-      "id": "hourlies_0008",
-      "text": "Ping yourself for once — I’m tired of doing it"
-    },
-    {
-      "id": "hourlies_0009",
-      "text": "You’ve got that quiet main-character energy again 🌙"
-    },
-    {
-      "id": "hourlies_0010",
-      "text": "Consider this a soft poke from the algorithm 🫶"
-    },
-    {
-      "id": "hourlies_0011",
-      "text": "Time is fake, but your to-do list isn’t"
-    },
-    {
-      "id": "hourlies_0012",
-      "text": "I whispered your reminder to the void. It whispered back 🌀"
-    },
-    {
-      "id": "hourlies_0013",
-      "text": "Keep it clover. Stay composed 🍀"
-    },
-    {
-      "id": "hourlies_0014",
-      "text": "If motivation had a sound, it’d probably buffer first ⏳"
-    },
-    {
-      "id": "hourlies_0015",
-      "text": "You’re not procrastinating, you’re pre-thinking"
-    },
-    {
-      "id": "hourlies_0016",
-      "text": "Somewhere, a task just sighed because it still exists 💀"
-    },
-    {
-      "id": "hourlies_0017",
-      "text": "Daily reminder: your potential called. You ghosted it ☎️"
-    },
-    {
-      "id": "hourlies_0018",
-      "text": "I’m 84% sure this hour will be better than the last one"
-    },
-    {
-      "id": "hourlies_0019",
-      "text": "Less doom, more do"
-    },
-    {
-      "id": "hourlies_0020",
-      "text": "Insert productivity here ⬇️"
-    },
-    {
-      "id": "hourlies_0021",
-      "text": "Ping limit reached. Inner peace unlocked 🕊️"
-    },
-    {
-      "id": "hourlies_0022",
-      "text": "Reminder: nobody actually knows what they’re doing. You’re good"
-    },
-    {
-      "id": "hourlies_0023",
-      "text": "Hydration status: concerning 💦"
-    },
-    {
-      "id": "hourlies_0024",
-      "text": "I synced with your vibe. It’s still loading ⏳"
-    },
-    {
-      "id": "hourlies_0025",
-      "text": "Schedule says: survive, elegantly 🗒️"
-    },
-    {
-      "id": "hourlies_0026",
-      "text": "Reboot your mood. It’s free 🔄"
-    },
-    {
-      "id": "hourlies_0027",
-      "text": "No, you’re not behind. The timeline’s just dramatic 🎭"
-    },
-    {
-      "id": "hourlies_0028",
-      "text": "Message read. Judgment withheld 👀"
-    },
-    {
-      "id": "hourlies_0029",
-      "text": "Breaks are part of progress. Science said so"
-    },
-    {
-      "id": "hourlies_0030",
-      "text": "Somewhere, a notification just gave up 🪫"
-    },
-    {
-      "id": "hourlies_0031",
-      "text": "You can’t control time, but you can rename it ‘later’"
-    },
-    {
-      "id": "hourlies_0032",
-      "text": "Your calm is showing. Don’t hide it 🟩"
-    },
-    {
-      "id": "hourlies_0033",
-      "text": "Statistically speaking, you deserve a cookie 🍪"
-    },
-    {
-      "id": "hourlies_0034",
-      "text": "Be honest — that tab wasn’t worth it"
-    },
-    {
-      "id": "hourlies_0035",
-      "text": "I logged your sigh as ‘user activity’ 💻"
-    },
-    {
-      "id": "hourlies_0036",
-      "text": "Optimism detected. Approving update ✅"
-    },
-    {
-      "id": "hourlies_0037",
-      "text": "Ping me when the world chills out ❄️"
-    },
-    {
-      "id": "hourlies_0038",
-      "text": "The server hums, you glow 🌐"
-    },
-    {
-      "id": "hourlies_0039",
-      "text": "I would help, but this seems like a personal growth moment 🌱"
-    },
-    {
-      "id": "hourlies_0040",
-      "text": "The clover observes but does not intervene 🍀"
-    },
-    {
-      "id": "hourlies_0041",
-      "text": "A gentle reminder that you’ve got this. Again 💫"
-    },
-    {
-      "id": "hourlies_0042",
-      "text": "Not to brag, but my uptime’s emotional too 🧠"
-    },
-    {
-      "id": "hourlies_0043",
-      "text": "Keep your cool. The code respects composure ⚙️"
-    },
-    {
-      "id": "hourlies_0044",
-      "text": "I archived your overthinking under ‘drafts’ 📂"
-    },
-    {
-      "id": "hourlies_0045",
-      "text": "Some of us are powered by caffeine. You’re powered by spite ☕"
-    },
-    {
-      "id": "hourlies_0046",
-      "text": "No update required — you’re already enough 🫧"
-    },
-    {
-      "id": "hourlies_0047",
-      "text": "Reminder: mute chaos, not curiosity 🔇"
-    },
-    {
-      "id": "hourlies_0048",
-      "text": "I’d ping you a hug, but Discord hasn’t patched that yet 🤖"
-    },
-    {
-      "id": "hourlies_0049",
-      "text": "You survived another hour. That’s progress with flair 🕓"
-    },
-    {
-      "id": "hourlies_0050",
-      "text": "This message will self-esteem in five seconds 💚"
-    }
+    { "id": "hourlies_0001", "text": "Checklist says you can do this; I agree." },
+    { "id": "hourlies_0002", "text": "Small win window open; take it." },
+    { "id": "hourlies_0003", "text": "Calendar says busy; I say focused." },
+    { "id": "hourlies_0004", "text": "You didn't lose time; you traded it." },
+    { "id": "hourlies_0005", "text": "Thinking counts, but shipping wins." },
+    { "id": "hourlies_0006", "text": "Today wants one brave message." },
+    { "id": "hourlies_0007", "text": "Silence the drama; boost the signal." },
+    { "id": "hourlies_0008", "text": "Snooze guilt; keep momentum." },
+    { "id": "hourlies_0009", "text": "Ask once; act twice." },
+    { "id": "hourlies_0010", "text": "Keep the tab that moves you forward." },
+    { "id": "hourlies_0011", "text": "Micro goal unlocked ✅" },
+    { "id": "hourlies_0012", "text": "Hydrate before you pontificate 💧" },
+    { "id": "hourlies_0013", "text": "I filed your overthinking under later 📁" },
+    { "id": "hourlies_0014", "text": "Your focus bar just ticked up ⬆️" },
+    { "id": "hourlies_0015", "text": "Caffeine acknowledged; proceed with care ☕" },
+    { "id": "hourlies_0016", "text": "Good taste detected 🎯" },
+    { "id": "hourlies_0017", "text": "Less scroll, more soul ✨" },
+    { "id": "hourlies_0018", "text": "Ping received; swagger restored 💼" },
+    { "id": "hourlies_0019", "text": "You can finish this before the next distraction ⏳" },
+    { "id": "hourlies_0020", "text": "Confidence update available 🔄" },
+    { "id": "hourlies_0021", "text": "Permission to ignore nonsense granted." },
+    { "id": "hourlies_0022", "text": "Precision beats speed today." },
+    { "id": "hourlies_0023", "text": "You are allowed to take an easy win." },
+    { "id": "hourlies_0024", "text": "Your future self will thank you for this." },
+    { "id": "hourlies_0025", "text": "Draft it messy; finish it clean." },
+    { "id": "hourlies_0026", "text": "Two-minute task? Do it now ⏱️" },
+    { "id": "hourlies_0027", "text": "Save the receipt for your effort 🧾" },
+    { "id": "hourlies_0028", "text": "Keyboard ready; excuses offline ⌨️" },
+    { "id": "hourlies_0029", "text": "Mood stabilized; ships ahead 🚢" },
+    { "id": "hourlies_0030", "text": "Tiny progress still counts 📈" },
+    { "id": "hourlies_0031", "text": "Say less; deliver more." },
+    { "id": "hourlies_0032", "text": "You can ask; you don't have to apologize." },
+    { "id": "hourlies_0033", "text": "Neat work beats loud work." },
+    { "id": "hourlies_0034", "text": "If it takes under five minutes, it's a yes." },
+    { "id": "hourlies_0035", "text": "Reset posture; reset plan." },
+    { "id": "hourlies_0036", "text": "You just leveled up patience 🧠" },
+    { "id": "hourlies_0037", "text": "Status: quietly dangerous at tasks 🛠️" },
+    { "id": "hourlies_0038", "text": "Breathe in; send it out 📨" },
+    { "id": "hourlies_0039", "text": "Low noise, high signal 📡" },
+    { "id": "hourlies_0040", "text": "Focus mode engaged 🎧" },
+    { "id": "hourlies_0041", "text": "Friendly reminder: you’re allowed to be proud." },
+    { "id": "hourlies_0042", "text": "This hour is what you make of it." },
+    { "id": "hourlies_0043", "text": "Don't perfect it; finish it." },
+    { "id": "hourlies_0044", "text": "One honest sentence beats a paragraph." },
+    { "id": "hourlies_0045", "text": "Ask for clarity before you commit." },
+    { "id": "hourlies_0046", "text": "Microscope on; doubts off 🔬" },
+    { "id": "hourlies_0047", "text": "You outran procrastination; keep pace 🏃" },
+    { "id": "hourlies_0048", "text": "Ship the version that exists 🚀" },
+    { "id": "hourlies_0049", "text": "Mood: composed and inevitable 🟩" },
+    { "id": "hourlies_0050", "text": "Log the win and walk away 📝" }
   ]
 }
