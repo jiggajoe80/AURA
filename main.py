@@ -268,28 +268,45 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! {round(bot.latency*1000)}ms")
 
 # ────────────── TASKS ──────────────
+from datetime import datetime, timedelta, timezone
+# ... (rest of imports)
+
 @tasks.loop(seconds=30)
 async def check_reminders():
-    now = datetime.utcnow()
+    # Aware "now" in UTC
+    now = datetime.now(timezone.utc)
     done = []
 
     for r in bot.reminders:
         try:
-            when = r["time"]  # datetime object (loaded by load_reminders)
+            when = r["time"]
+
+            # Normalize possible string or naive datetimes
+            if isinstance(when, str):
+                try:
+                    when = datetime.fromisoformat(when)
+                except Exception:
+                    when = None
+            if when is None:
+                done.append(r)
+                continue
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            else:
+                when = when.astimezone(timezone.utc)
+
+            # Not yet time
             if now < when:
                 continue
 
-            # Resolve user
+            # Resolve user and channel
             try:
                 user = await bot.fetch_user(r["user_id"])
             except Exception as e:
                 logger.error(f"Reminder fetch_user fail: {e}")
                 user = None
 
-            # Try cached channel first
             ch = bot.get_channel(r["channel_id"])
-
-            # Fallback: fetch the channel from API if not cached
             if ch is None:
                 try:
                     ch = await bot.fetch_channel(r["channel_id"])
@@ -314,14 +331,12 @@ async def check_reminders():
                 except Exception as e:
                     logger.error(f"Reminder DM send fail: {e}")
 
-            # Mark processed either way so we don't loop forever
             done.append(r)
 
         except Exception as e:
             logger.error(f"Reminder processing error: {e}")
             done.append(r)
 
-    # Remove processed and persist
     for r in done:
         try:
             bot.reminders.remove(r)
