@@ -1,7 +1,4 @@
 {
-  // 🏠 The Left Lair (Production) — keep silent during tests
   "1270856120377802793": { "silent": true },
-
-  // 🧪 AURA-DEV (Testing Server) — active for development
   "1433879888359854245": { "silent": false }
 }
