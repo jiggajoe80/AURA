@@ -272,19 +272,63 @@ async def ping(interaction: discord.Interaction):
 async def check_reminders():
     now = datetime.utcnow()
     done = []
+
     for r in bot.reminders:
-        if now >= r["time"]:
+        try:
+            when = r["time"]  # datetime object (loaded by load_reminders)
+            if now < when:
+                continue
+
+            # Resolve user
             try:
-                ch = bot.get_channel(r["channel_id"])
                 user = await bot.fetch_user(r["user_id"])
-                if ch:
-                    await ch.send(f"⏰ {user.mention} Reminder: {r['message']}")
             except Exception as e:
-                logger.error(f"Reminder send fail: {e}")
+                logger.error(f"Reminder fetch_user fail: {e}")
+                user = None
+
+            # Try cached channel first
+            ch = bot.get_channel(r["channel_id"])
+
+            # Fallback: fetch the channel from API if not cached
+            if ch is None:
+                try:
+                    ch = await bot.fetch_channel(r["channel_id"])
+                except Exception as e:
+                    logger.error(f"Reminder fetch_channel fail: {e}")
+                    ch = None
+
+            text = f"⏰ {user.mention if user else ''} Reminder: {r['message']}".strip()
+
+            sent = False
+            if ch and isinstance(ch, (discord.TextChannel, discord.Thread)):
+                try:
+                    await ch.send(text)
+                    sent = True
+                except Exception as e:
+                    logger.error(f"Reminder channel send fail: {e}")
+
+            if not sent and user:
+                try:
+                    await user.send(text)
+                    sent = True
+                except Exception as e:
+                    logger.error(f"Reminder DM send fail: {e}")
+
+            # Mark processed either way so we don't loop forever
             done.append(r)
+
+        except Exception as e:
+            logger.error(f"Reminder processing error: {e}")
+            done.append(r)
+
+    # Remove processed and persist
     for r in done:
-        bot.reminders.remove(r)
-    if done: bot.save_reminders()
+        try:
+            bot.reminders.remove(r)
+        except ValueError:
+            pass
+    if done:
+        bot.save_reminders()
 
 @tasks.loop(hours=1)
 async def rotate_presence():
