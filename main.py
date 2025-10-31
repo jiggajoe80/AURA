@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 
-# ────────────── CONFIG ──────────────
+# ───────── CONFIG ─────────
 load_dotenv()
 
 logging.basicConfig(
@@ -24,7 +24,8 @@ INITIAL_EXTENSIONS = [
     "cogs.fortunes",
     "cogs.say",
     "cogs.timezones",
-    "cogs.remind",  # ← you already added this cog; keep it loaded here
+    "cogs.remind",
+    "cogs.admin",  # ← new
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -32,11 +33,22 @@ PRESENCE_FILE = "AURA.PRESENCE.v2.json"
 HOURLIES_FILE = "AURA.HOURLIES.v2.json"
 JOKES_FILE = "jokes.json"
 
-LOG_CHANNEL_ID = 1427716795615285329
-AUTOPOST_CHANNEL_ID = 1399840085536407602
-REMINDERS_FILE = DATA_DIR / "reminders.json"  # ← pinned to /data
+# Per-guild config files
+AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
+GUILD_FLAGS_FILE  = DATA_DIR / "guild_flags.json"
 
-# ────────────── HELPERS ──────────────
+LOG_CHANNEL_ID = 1427716795615285329
+REMINDERS_FILE = DATA_DIR / "reminders.json"
+
+def _load_json(p: Path, default):
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+def _save_json(p: Path, obj):
+    p.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+
 def _load_items_from_json(filename: str):
     fp = DATA_DIR / filename
     try:
@@ -56,13 +68,8 @@ def load_lines_or_default(file, fallback):
     logger.info(f"Loaded {len(lines)} lines from {file}")
     return lines
 
-# ---- joke formatting (used by hourly posts) ---------------------------------
+# ---- joke formatting for hourly ---------------------------------------------
 def _split_joke_clean(line: str) -> tuple[str, str]:
-    """
-    Accepts lines that may already include spoiler bars like '||punch||'.
-    Returns (setup, punchline) with any stray trailing pipes removed so we
-    don't end up doubling bars when we wrap again.
-    """
     raw = str(line).strip()
     parts = raw.split("||", 1)
     if len(parts) == 2:
@@ -78,7 +85,7 @@ def _format_joke(line: str) -> str:
     return f"**Q:** {q} →\n**A:** ||{a}||" if a else q
 # -----------------------------------------------------------------------------
 
-# ────────────── KEEP ALIVE ──────────────
+# ───────── keepalive ─────────
 app = Flask("")
 
 @app.route("/")
@@ -94,7 +101,7 @@ def _run():
 def keep_alive():
     Thread(target=_run, daemon=True).start()
 
-# ────────────── CORE BOT ──────────────
+# ───────── bot ─────────
 intents = discord.Intents.default()
 intents.message_content = True
 intents.messages = True
@@ -112,8 +119,8 @@ class AuraBot(commands.Bot):
         self.used_jokes_today = []
         self._hourly_flip = False
         self.last_reset_date = None
-        self.last_channel_activity: dict[int, datetime] = {}
-        self.last_hourly_post = datetime.utcnow() - timedelta(hours=2)
+        self.last_channel_activity: dict[int, datetime] = {}  # channel_id -> last message time
+        self.last_hourly_post: dict[int, datetime] = {}       # channel_id -> last hourly
         self.cooldowns = {}
         self._hourly_enabled = True
 
@@ -130,22 +137,31 @@ class AuraBot(commands.Bot):
         except Exception as e:
             logger.exception(f"Failed to sync slash commands: {e}")
 
-    # ───── JSON LOADERS ─────
+    # per-guild config
+    @property
+    def autopost_map(self) -> dict:
+        return _load_json(AUTOPOST_MAP_FILE, {})
+
+    @property
+    def guild_flags(self) -> dict:
+        return _load_json(GUILD_FLAGS_FILE, {})
+
+    def is_silent(self, guild_id: int) -> bool:
+        return bool(self.guild_flags.get(str(guild_id), {}).get("silent", False))
+
+    # pools
     def reset_daily_pools(self):
         now_utc = datetime.utcnow().date()
         if self.last_reset_date != now_utc:
             self.used_presence_today = []
             self.used_hourly_today = []
             self.used_jokes_today = []
-
             self.presence_pool = PRESENCE_LINES.copy()
             self.hourly_pool   = HOURLY_LINES.copy()
             self.jokes_pool    = JOKES_LINES.copy()
-
             random.shuffle(self.presence_pool)
             random.shuffle(self.hourly_pool)
             random.shuffle(self.jokes_pool)
-
             self.last_reset_date = now_utc
             logger.info(f"Daily pools reset at UTC midnight: {now_utc}")
 
@@ -173,6 +189,7 @@ class AuraBot(commands.Bot):
         self.used_jokes_today.append(line)
         return _format_joke(line)
 
+    # cooldown helper
     def check_cooldown(self, user_id, command_name):
         key = f"{user_id}_{command_name}"
         now = datetime.utcnow()
@@ -181,7 +198,7 @@ class AuraBot(commands.Bot):
         self.cooldowns[key] = now + timedelta(seconds=5)
         return True, 0
 
-    # ───── Reminder Save/Load (UTC aware) ─────
+    # reminders save/load (UTC aware)
     def load_reminders(self):
         try:
             if os.path.exists(REMINDERS_FILE):
@@ -229,7 +246,7 @@ class AuraBot(commands.Bot):
 
 bot = AuraBot()
 
-# ────────────── JSON POOLS INIT ──────────────
+# pools init
 PRESENCE_LINES = load_lines_or_default(
     PRESENCE_FILE,
     ["watching the quiet threads", "calm loop, steady soul", "carrying calm in a mug ☘️"]
@@ -244,7 +261,7 @@ JOKES_LINES = load_lines_or_default(
 )
 bot.jokes_pool = JOKES_LINES.copy()
 
-# ────────────── EVENTS ──────────────
+# events
 @bot.event
 async def on_ready():
     logger.info(f"{bot.user} has connected to Discord!")
@@ -256,49 +273,39 @@ async def on_ready():
 
     if not check_reminders.is_running(): check_reminders.start()
     if not rotate_presence.is_running(): rotate_presence.start()
-    if not check_hourly_post.is_running(): check_hourly_post.start()
+    if not check_hourlies.is_running():   check_hourlies.start()
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
         return
     bot.last_channel_activity[message.channel.id] = datetime.utcnow()
-    text = message.content.lower()
-    if "good bot" in text or "thanks aura" in text:
-        await message.add_reaction("💜")
-    elif "aura" in text and any(w in text for w in ["hello", "hi", "hey"]):
-        await message.add_reaction("👋")
 
-# ────────────── COMMANDS ──────────────
+# basic ping
 @bot.tree.command(name="ping", description="Check latency")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! {round(bot.latency*1000)}ms")
 
-# ────────────── TASKS ──────────────
+# tasks
 @tasks.loop(seconds=30)
 async def check_reminders():
     now = datetime.now(timezone.utc)
     done: list[dict] = []
-
     for r in bot.reminders:
         try:
             when = r["time"]
-            # defensive normalization in case legacy entries exist
             if isinstance(when, str):
                 try:
                     when = datetime.fromisoformat(when)
                 except Exception:
-                    done.append(r)
-                    continue
+                    done.append(r); continue
             if when.tzinfo is None:
                 when = when.replace(tzinfo=timezone.utc)
             else:
                 when = when.astimezone(timezone.utc)
-
             if now < when:
                 continue
 
-            # fetch user + channel; fallback to DM if channel send fails
             user = None
             try:
                 user = await bot.fetch_user(r["user_id"])
@@ -315,34 +322,22 @@ async def check_reminders():
 
             text = f"⏰ {(user.mention if user else '')} Reminder: {r['message']}".strip()
             sent = False
-
             if ch and isinstance(ch, (discord.TextChannel, discord.Thread)):
-                try:
-                    await ch.send(text)
-                    sent = True
-                except Exception as e:
-                    logger.error(f"Reminder channel send fail: {e}")
-
+                try: await ch.send(text); sent = True
+                except Exception as e: logger.error(f"Reminder channel send fail: {e}")
             if not sent and user:
-                try:
-                    await user.send(text)
-                    sent = True
-                except Exception as e:
-                    logger.error(f"Reminder DM send fail: {e}")
+                try: await user.send(text); sent = True
+                except Exception as e: logger.error(f"Reminder DM send fail: {e}")
 
             done.append(r)
-
         except Exception as e:
             logger.error(f"Reminder processing error: {e}")
             done.append(r)
 
     for r in done:
-        try:
-            bot.reminders.remove(r)
-        except ValueError:
-            pass
-    if done:
-        bot.save_reminders()
+        try: bot.reminders.remove(r)
+        except ValueError: pass
+    if done: bot.save_reminders()
 
 @tasks.loop(hours=1)
 async def rotate_presence():
@@ -351,42 +346,51 @@ async def rotate_presence():
     logger.info(f"Presence rotated to: {text}")
 
 @tasks.loop(minutes=1)
-async def check_hourly_post():
+async def check_hourlies():
     """
-    Post once per hour (if the channel has been quiet for 30+ minutes),
-    alternating between a joke and an hourly prompt.
-    Jokes include a spoilered punchline so they match /joke style.
+    Once per hour per guild, if its target channel has been quiet 30+ min,
+    post an hourly (alternating joke/hourly). Honors guild silent flag.
     """
     if not bot._hourly_enabled:
         return
 
     now = datetime.utcnow()
-    channel = bot.get_channel(AUTOPOST_CHANNEL_ID)
-    if not channel:
-        return
+    ap_map = bot.autopost_map
 
-    last_activity = bot.last_channel_activity.get(AUTOPOST_CHANNEL_ID)
-    inactive_seconds = (now - last_activity).total_seconds() if last_activity else float("inf")
-    since_last = (now - bot.last_hourly_post).total_seconds() if bot.last_hourly_post else float("inf")
+    for guild in bot.guilds:
+        if bot.is_silent(guild.id):
+            continue
 
-    if inactive_seconds >= 1800 and since_last >= 3600:
+        ch_id = ap_map.get(str(guild.id))
+        if not ch_id:
+            continue
         try:
-            bot._hourly_flip = not bot._hourly_flip
-            message: str | None = None
-            if bot._hourly_flip and bot.jokes_pool:
-                message = bot.get_next_joke()
-            if not message:
-                message = bot.get_next_hourly()
+            ch = guild.get_channel(int(ch_id)) or await bot.fetch_channel(int(ch_id))
+        except Exception:
+            ch = None
+        if not ch or not isinstance(ch, (discord.TextChannel, discord.Thread)):
+            continue
 
-            if isinstance(channel, (discord.TextChannel, discord.Thread)):
-                await channel.send(message)
+        last_activity = bot.last_channel_activity.get(ch.id)
+        inactive_seconds = (now - last_activity).total_seconds() if last_activity else float("inf")
+        last_hourly = bot.last_hourly_post.get(ch.id, now - timedelta(hours=2))
+        since_last = (now - last_hourly).total_seconds()
 
-            bot.last_hourly_post = now
-            logger.info(f"Posted {'joke' if bot._hourly_flip else 'hourly'}: {message}")
-        except Exception as e:
-            logger.error(f"Hourly post error: {e}")
+        if inactive_seconds >= 1800 and since_last >= 3600:
+            try:
+                bot._hourly_flip = not bot._hourly_flip
+                message: str | None = None
+                if bot._hourly_flip and bot.jokes_pool:
+                    message = bot.get_next_joke()
+                if not message:
+                    message = bot.get_next_hourly()
+                await ch.send(message)
+                bot.last_hourly_post[ch.id] = now
+                logger.info(f"[{guild.name}] hourly posted in #{ch.name}")
+            except Exception as e:
+                logger.error(f"Hourly post error in {guild.name}: {e}")
 
-# ────────────── ENTRY ──────────────
+# entry
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
     if not token:
