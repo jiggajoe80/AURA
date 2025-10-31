@@ -1,3 +1,4 @@
+# cogs/namegen.py
 import json, random
 from pathlib import Path
 from discord import app_commands, Interaction
@@ -29,19 +30,16 @@ class NameGen(commands.Cog):
         self.bot = bot
         self.bank = _load_bank()
 
-    @app_commands.command(name="namegen", description="Generate names by theme (public by default).")
-    @app_commands.describe(theme="Theme key from the bank (e.g., clover, fantasy)",
-                           count="How many (1–10)",
-                           private="If true, reply only to you")
-    async def namegen(self, itx: Interaction, theme: str | None = None, count: int = 3, private: bool = False):
+    @app_commands.command(name="namegen", description="Generate names by theme (public).")
+    @app_commands.describe(theme="Theme key (e.g., clover, fantasy)", count="How many (1–10)")
+    async def namegen(self, itx: Interaction, theme: str | None = None, count: int = 3):
         themes = self.bank.get("themes", {})
         key = (theme or self.bank.get("default_theme") or next(iter(themes), "clover")).lower()
         if key not in themes:
             key = self.bank.get("default_theme", "clover")
         count = max(1, min(10, count))
         names = [ _make(themes[key]) for _ in range(count) ]
-        text = f"**Theme:** `{key}`\n" + "\n".join(f"• {n}" for n in names)
-        await itx.response.send_message(text, ephemeral=private)
+        await itx.response.send_message(f"**Theme:** `{key}`\n" + "\n".join(f"• {n}" for n in names))
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(NameGen(bot))
