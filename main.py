@@ -25,7 +25,10 @@ INITIAL_EXTENSIONS = [
     "cogs.say",
     "cogs.timezones",
     "cogs.remind",
-    "cogs.admin",  # ← new
+    "cogs.admin",
+    "cogs.namegen",
+    "cogs.quote",
+    "cogs.polls",
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
