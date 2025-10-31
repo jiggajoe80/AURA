@@ -24,17 +24,17 @@ INITIAL_EXTENSIONS = [
     "cogs.fortunes",
     "cogs.say",
     "cogs.timezones",
-    "cogs.remind"
+    "cogs.remind",  # ← you already added this cog; keep it loaded here
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = "AURA.PRESENCE.v2.json"
 HOURLIES_FILE = "AURA.HOURLIES.v2.json"
-JOKES_FILE = "jokes.json"  # ← use the file you actually committed
+JOKES_FILE = "jokes.json"
 
 LOG_CHANNEL_ID = 1427716795615285329
 AUTOPOST_CHANNEL_ID = 1399840085536407602
-REMINDERS_FILE = "reminders.json"
+REMINDERS_FILE = DATA_DIR / "reminders.json"  # ← pinned to /data
 
 # ────────────── HELPERS ──────────────
 def _load_items_from_json(filename: str):
@@ -103,7 +103,7 @@ intents.guilds = True
 class AuraBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        self.reminders = []
+        self.reminders: list[dict] = []
         self.presence_pool = []
         self.hourly_pool = []
         self.jokes_pool = []
@@ -112,20 +112,18 @@ class AuraBot(commands.Bot):
         self.used_jokes_today = []
         self._hourly_flip = False
         self.last_reset_date = None
-        self.last_channel_activity = {}
+        self.last_channel_activity: dict[int, datetime] = {}
         self.last_hourly_post = datetime.utcnow() - timedelta(hours=2)
         self.cooldowns = {}
-        self._hourly_enabled = True  # one simple flag you can toggle later if needed
+        self._hourly_enabled = True
 
     async def setup_hook(self):
-        # load cogs
         for ext in INITIAL_EXTENSIONS:
             try:
                 await self.load_extension(ext)
                 logger.info(f"Loaded extension: {ext}")
             except Exception as e:
                 logger.exception(f"Failed to load {ext}: {e}")
-        # sync commands
         try:
             await self.tree.sync()
             logger.info("Slash commands synced.")
@@ -166,11 +164,9 @@ class AuraBot(commands.Bot):
         return choice
 
     def get_next_joke(self) -> str | None:
-        """Pick a joke, track usage, and return it formatted with spoilered punchline."""
         self.reset_daily_pools()
         if not self.jokes_pool:
             return None
-        # de-dupe-of-the-day
         candidates = [j for j in self.jokes_pool if j not in self.used_jokes_today] or self.jokes_pool
         raw = random.choice(candidates)
         line = raw.get("text") if isinstance(raw, dict) else str(raw)
@@ -185,27 +181,30 @@ class AuraBot(commands.Bot):
         self.cooldowns[key] = now + timedelta(seconds=5)
         return True, 0
 
-   # ----- Reminder Save/Load -----
-def load_reminders(self):
-    try:
-        if os.path.exists(REMINDERS_FILE):
-            data = json.loads(open(REMINDERS_FILE, "r", encoding="utf-8").read())
+    # ───── Reminder Save/Load (UTC aware) ─────
+    def load_reminders(self):
+        try:
+            if os.path.exists(REMINDERS_FILE):
+                data = json.loads(open(REMINDERS_FILE, "r", encoding="utf-8").read())
+                self.reminders = []
+                for r in data:
+                    t = datetime.fromisoformat(r["time"])
+                    if t.tzinfo is None:
+                        t = t.replace(tzinfo=timezone.utc)
+                    else:
+                        t = t.astimezone(timezone.utc)
+                    self.reminders.append({
+                        "user_id": r["user_id"],
+                        "channel_id": r["channel_id"],
+                        "message": r["message"],
+                        "time": t,
+                    })
+                logger.info(f"Loaded {len(self.reminders)} reminders")
+            else:
+                self.reminders = []
+        except Exception as e:
+            logger.error(f"Error loading reminders: {e}")
             self.reminders = []
-            for r in data:
-                t = datetime.fromisoformat(r["time"])
-                if t.tzinfo is None:
-                    t = t.replace(tzinfo=timezone.utc)
-                else:
-                    t = t.astimezone(timezone.utc)
-                self.reminders.append({
-                    "user_id": r["user_id"],
-                    "channel_id": r["channel_id"],
-                    "message": r["message"],
-                    "time": t
-                })
-            logger.info(f"Loaded {len(self.reminders)} reminders")
-    except Exception as e:
-        logger.error(f"Error loading reminders: {e}")
 
     def save_reminders(self):
         try:
@@ -215,7 +214,10 @@ def load_reminders(self):
                         "user_id": r["user_id"],
                         "channel_id": r["channel_id"],
                         "message": r["message"],
-                        "time": r["time"].isoformat()
+                        "time": (
+                            r["time"].astimezone(timezone.utc)
+                            if r["time"].tzinfo else r["time"].replace(tzinfo=timezone.utc)
+                        ).isoformat(),
                     } for r in self.reminders
                 ],
                 open(REMINDERS_FILE, "w", encoding="utf-8"),
@@ -273,43 +275,35 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! {round(bot.latency*1000)}ms")
 
 # ────────────── TASKS ──────────────
-from datetime import datetime, timedelta, timezone
-# ... (rest of imports)
-
 @tasks.loop(seconds=30)
 async def check_reminders():
-    # Aware "now" in UTC
     now = datetime.now(timezone.utc)
-    done = []
+    done: list[dict] = []
 
     for r in bot.reminders:
         try:
             when = r["time"]
-
-            # Normalize possible string or naive datetimes
+            # defensive normalization in case legacy entries exist
             if isinstance(when, str):
                 try:
                     when = datetime.fromisoformat(when)
                 except Exception:
-                    when = None
-            if when is None:
-                done.append(r)
-                continue
+                    done.append(r)
+                    continue
             if when.tzinfo is None:
                 when = when.replace(tzinfo=timezone.utc)
             else:
                 when = when.astimezone(timezone.utc)
 
-            # Not yet time
             if now < when:
                 continue
 
-            # Resolve user and channel
+            # fetch user + channel; fallback to DM if channel send fails
+            user = None
             try:
                 user = await bot.fetch_user(r["user_id"])
             except Exception as e:
                 logger.error(f"Reminder fetch_user fail: {e}")
-                user = None
 
             ch = bot.get_channel(r["channel_id"])
             if ch is None:
@@ -319,9 +313,9 @@ async def check_reminders():
                     logger.error(f"Reminder fetch_channel fail: {e}")
                     ch = None
 
-            text = f"⏰ {user.mention if user else ''} Reminder: {r['message']}".strip()
-
+            text = f"⏰ {(user.mention if user else '')} Reminder: {r['message']}".strip()
             sent = False
+
             if ch and isinstance(ch, (discord.TextChannel, discord.Thread)):
                 try:
                     await ch.send(text)
@@ -375,16 +369,13 @@ async def check_hourly_post():
     inactive_seconds = (now - last_activity).total_seconds() if last_activity else float("inf")
     since_last = (now - bot.last_hourly_post).total_seconds() if bot.last_hourly_post else float("inf")
 
-    # Only post if: quiet ≥ 30m and last post ≥ 60m
     if inactive_seconds >= 1800 and since_last >= 3600:
         try:
-            bot._hourly_flip = not bot._hourly_flip  # flip branch: joke <-> hourly
-
+            bot._hourly_flip = not bot._hourly_flip
             message: str | None = None
             if bot._hourly_flip and bot.jokes_pool:
-                message = bot.get_next_joke()  # formatted with spoiler
-
-            if not message:  # fallback to hourly text
+                message = bot.get_next_joke()
+            if not message:
                 message = bot.get_next_hourly()
 
             if isinstance(channel, (discord.TextChannel, discord.Thread)):
