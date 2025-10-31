@@ -1,4 +1,4 @@
-import json, random, os
+import json, random
 from pathlib import Path
 from discord import app_commands, Interaction
 from discord.ext import commands
@@ -9,17 +9,19 @@ def _load_bank():
     if DATA_FILE.exists():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    # safe defaults if file missing
     return {
+        "default_theme": "clover",
         "themes": {
-            "fantasy": {"prefix": ["Ar", "Bel", "Cal", "Dor", "Eld"], "core": ["wyn", "thor", "var", "mir", "riel"], "suffix": ["ion", "a", "os", "en", "yth"]},
-            "clover":  {"prefix": ["Luck", "Clover", "Juja", "Green", "Thorn"], "core": ["shine", "leaf", "coil", "glint", "veil"], "suffix": ["_V1", "ix", "ling", "hart", "ward"]},
-            "villain": {"prefix": ["Night", "Grim", "Viper", "Iron", "Hex"], "core": ["fang", "shade", "coil", "knell", "bane"], "suffix": ["lord", "ix", "helm", "wrath", "mark"]}
-        },
-        "default_theme": "clover"
+            "clover":  { "prefix": ["Luck","Clover","Juja","Green","Thorn"],
+                         "core":   ["shine","leaf","coil","glint","veil"],
+                         "suffix": ["_V1","ix","ling","hart","ward"] },
+            "fantasy": { "prefix": ["Ar","Bel","Cal","Dor","Eld"],
+                         "core":   ["wyn","thor","var","mir","riel"],
+                         "suffix": ["ion","a","os","en","yth"] }
+        }
     }
 
-def _make_name(parts: dict) -> str:
+def _make(parts: dict) -> str:
     return f"{random.choice(parts['prefix'])}{random.choice(parts['core'])}{random.choice(parts['suffix'])}"
 
 class NameGen(commands.Cog):
@@ -27,16 +29,19 @@ class NameGen(commands.Cog):
         self.bot = bot
         self.bank = _load_bank()
 
-    @app_commands.command(name="namegen", description="Generate fun names by theme.")
-    @app_commands.describe(theme="fantasy, clover, villain…", count="How many (1-10)")
-    async def namegen(self, itx: Interaction, theme: str | None = None, count: int = 1):
+    @app_commands.command(name="namegen", description="Generate names by theme (public by default).")
+    @app_commands.describe(theme="Theme key from the bank (e.g., clover, fantasy)",
+                           count="How many (1–10)",
+                           private="If true, reply only to you")
+    async def namegen(self, itx: Interaction, theme: str | None = None, count: int = 3, private: bool = False):
         themes = self.bank.get("themes", {})
         key = (theme or self.bank.get("default_theme") or next(iter(themes), "clover")).lower()
-        if key not in themes:  # graceful fallback
+        if key not in themes:
             key = self.bank.get("default_theme", "clover")
         count = max(1, min(10, count))
-        names = [ _make_name(themes[key]) for _ in range(count) ]
-        await itx.response.send_message(f"**Theme:** `{key}`\n" + "\n".join(f"• {n}" for n in names), ephemeral=True)
+        names = [ _make(themes[key]) for _ in range(count) ]
+        text = f"**Theme:** `{key}`\n" + "\n".join(f"• {n}" for n in names)
+        await itx.response.send_message(text, ephemeral=private)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(NameGen(bot))
