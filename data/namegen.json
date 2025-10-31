@@ -1,0 +1,8 @@
+{
+  "default_theme": "clover",
+  "themes": {
+    "clover":  { "prefix": ["Luck","Clover","Juja","Green","Thorn"], "core": ["shine","leaf","coil","glint","veil"], "suffix": ["_V1","ix","ling","hart","ward"] },
+    "fantasy": { "prefix": ["Ar","Bel","Cal","Dor","Eld"], "core": ["wyn","thor","var","mir","riel"], "suffix": ["ion","a","os","en","yth"] },
+    "villain": { "prefix": ["Night","Grim","Viper","Iron","Hex"], "core": ["fang","shade","coil","knell","bane"], "suffix": ["lord","ix","helm","wrath","mark"] }
+  }
+}
