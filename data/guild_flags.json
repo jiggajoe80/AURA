@@ -1,0 +1,4 @@
+{
+  "PROD_GUILD_ID": { "silent": true },
+  "DEV_GUILD_ID":  { "silent": false }
+}
