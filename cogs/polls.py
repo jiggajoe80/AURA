@@ -1,59 +1,65 @@
+# cogs/polls.py — Hardened natural poll parser
 from discord import app_commands, Interaction
 from discord.ext import commands
 import re
 
 EMOJI = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣"]
 
-def _smart_from_question(q: str) -> list[str]:
-    m = re.search(r"\b(.+?)\s+(?:or|vs)\s+(.+?)\s*\??$", q, flags=re.IGNORECASE)
-    if m:
-        a, b = m.group(1).strip(), m.group(2).strip()
-        a = re.sub(r".*:\s*", "", a)
-        return [a, b]
-    return []
+def _extract_options(q: str) -> list[str]:
+    q = q.strip().rstrip("?").strip()
 
-def _split_list(s: str | None) -> list[str]:
-    if not s: return []
-    if ";" in s: return [p.strip() for p in s.split(";") if p.strip()]
-    if "," in s: return [p.strip() for p in s.split(",") if p.strip()]
-    return [s.strip()] if s.strip() else []
+    # Normalize weird dash types to commas
+    q = re.sub(r"[–—−]", "-", q)  # replace en/em/minus with simple dash
+    q = re.sub(r"\s*-\s*", ",", q)  # turn dash groups into commas for splitting
+    q = re.sub(r"\s*\|\s*", ",", q)  # pipes to commas
+    q = re.sub(r"\s*;\s*", ",", q)  # semicolons to commas
+
+    # 1) Smart “or / vs” parsing
+    m = re.search(r"(?:^|:)\s*([^:]+?)\s*(?:\b(?:or|vs)\b\s*[^:]+)+$", q, flags=re.IGNORECASE)
+    if m:
+        segment = m.group(0)
+        parts = re.split(r"\b(?:or|vs)\b", segment, flags=re.IGNORECASE)
+        opts = [p.replace(":", "").strip() for p in parts if p.strip()]
+        if len(opts) >= 2:
+            return opts
+
+    # 2) Comma-separated fallback (after dash normalization)
+    parts = re.split(r",", q)
+    opts = [p.strip() for p in parts if p.strip()]
+    if len(opts) >= 2:
+        return opts
+
+    # 3) Last resort: simple X or Y
+    m2 = re.search(r"(.+?)\s+(?:or|vs)\s+(.+)$", q, flags=re.IGNORECASE)
+    if m2:
+        return [m2.group(1).strip(), m2.group(2).strip()]
+
+    return []
 
 class Polls(commands.Cog):
     def __init__(self, bot): self.bot = bot
 
-    @app_commands.command(name="poll", description="Create a quick reaction poll (up to 6 options).")
-    @app_commands.describe(
-        question="Your question (e.g., 'Soup or salad?')",
-        option1="Option 1", option2="Option 2", option3="Option 3",
-        option4="Option 4", option5="Option 5", option6="Option 6",
-        options="OR paste a list: 'Yes;No;Maybe' or 'Yes, No, Maybe'"
-    )
-    async def poll(self, itx: Interaction,
-                   question: str,
-                   option1: str | None = None, option2: str | None = None,
-                   option3: str | None = None, option4: str | None = None,
-                   option5: str | None = None, option6: str | None = None,
-                   options: str | None = None):
-        # Priority: explicit fields > options list > smart parse from question
-        fields = [o for o in [option1, option2, option3, option4, option5, option6] if o]
-        if not fields: fields = _split_list(options)
-        if not fields: fields = _smart_from_question(question)
-
-        if not 2 <= len(fields) <= 6:
+    @app_commands.command(name="poll", description="Create a quick reaction poll.")
+    @app_commands.describe(question="Type naturally: 'apples or bananas or oranges' or 'pizza - tacos - burgers'")
+    async def poll(self, itx: Interaction, question: str):
+        options = _extract_options(question)
+        options = [o for o in options if o]
+        if len(options) < 2:
             return await itx.response.send_message(
-                "Provide 2–6 options using fields, a list like `Yes;No;Maybe`, "
-                "or phrase the question as `X or Y`.",
+                "I couldn’t find clear options. Try: `Soup or salad?`, `Pie, Cake, Cookies`, or `Tacos - Burritos - Nachos`.",
                 ephemeral=True
             )
+        options = options[:6]
 
-        # Respond immediately — this message *is* the poll.
-        text = [f"**{question.rstrip('?')}?**"] + [f"{EMOJI[i]} {opt}" for i, opt in enumerate(fields)]
-        await itx.response.send_message("\n".join(text))
+        title = f"**{question.rstrip('?')}?**"
+        body = "\n".join(f"{EMOJI[i]} {opt}" for i, opt in enumerate(options))
+        await itx.response.send_message(f"{title}\n{body}")
         msg = await itx.original_response()
 
-        # Add reactions without blocking user-visible response
-        for i in range(len(fields)):
-            try: await msg.add_reaction(EMOJI[i])
-            except: pass
+        for i in range(len(options)):
+            try:
+                await msg.add_reaction(EMOJI[i])
+            except:
+                pass
 
 async def setup(bot): await bot.add_cog(Polls(bot))
