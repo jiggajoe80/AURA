@@ -30,6 +30,7 @@ INITIAL_EXTENSIONS = [
     "cogs.quote",
     "cogs.polls",
     "cogs.emoji",
+    "cogs.emoji_ids",
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
