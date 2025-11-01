@@ -268,6 +268,10 @@ bot.jokes_pool = JOKES_LINES.copy()
 @bot.event
 async def on_ready():
     logger.info(f"{bot.user} has connected to Discord!")
+
+    # diagnostic: list all guilds Aura is currently in
+    logger.info(f"Guilds: {', '.join(f'{g.name} ({g.id})' for g in bot.guilds) or 'NONE'}")
+
     bot.load_reminders()
     bot.reset_daily_pools()
 
