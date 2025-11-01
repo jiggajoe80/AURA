@@ -1,4 +1,3 @@
-# cogs/polls.py
 from discord import app_commands, Interaction
 from discord.ext import commands
 import re
@@ -6,11 +5,9 @@ import re
 EMOJI = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣"]
 
 def _smart_from_question(q: str) -> list[str]:
-    # Detect "X or Y" or "A vs B" patterns (case-insensitive)
     m = re.search(r"\b(.+?)\s+(?:or|vs)\s+(.+?)\s*\??$", q, flags=re.IGNORECASE)
     if m:
         a, b = m.group(1).strip(), m.group(2).strip()
-        # Avoid capturing the leading question text before a colon, e.g., "Best: soup or salad?"
         a = re.sub(r".*:\s*", "", a)
         return [a, b]
     return []
@@ -37,12 +34,10 @@ class Polls(commands.Cog):
                    option3: str | None = None, option4: str | None = None,
                    option5: str | None = None, option6: str | None = None,
                    options: str | None = None):
-        # Priority: explicit option fields > options list > smart parse
+        # Priority: explicit fields > options list > smart parse from question
         fields = [o for o in [option1, option2, option3, option4, option5, option6] if o]
-        if not fields:
-            fields = _split_list(options)
-        if not fields:
-            fields = _smart_from_question(question)
+        if not fields: fields = _split_list(options)
+        if not fields: fields = _smart_from_question(question)
 
         if not 2 <= len(fields) <= 6:
             return await itx.response.send_message(
@@ -51,13 +46,14 @@ class Polls(commands.Cog):
                 ephemeral=True
             )
 
-        await itx.response.defer()
-        lines = [f"**{question.rstrip('?')}?**"] + [f"{EMOJI[i]} {opt}" for i, opt in enumerate(fields)]
-        msg = await itx.channel.send("\n".join(lines))
+        # Respond immediately — this message *is* the poll.
+        text = [f"**{question.rstrip('?')}?**"] + [f"{EMOJI[i]} {opt}" for i, opt in enumerate(fields)]
+        await itx.response.send_message("\n".join(text))
+        msg = await itx.original_response()
+
+        # Add reactions without blocking user-visible response
         for i in range(len(fields)):
             try: await msg.add_reaction(EMOJI[i])
             except: pass
-        try: await itx.followup.send("Poll posted.", ephemeral=True)
-        except: pass
 
 async def setup(bot): await bot.add_cog(Polls(bot))
