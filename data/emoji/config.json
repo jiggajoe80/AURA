@@ -1,28 +1,24 @@
 {
-  "guilds": {
-    "1433879888359854245": {
-      "enabled": true,
-      "channels_allow": [1433890538834104330],         // DEV: #aura-dev (allow only)
-      "channels_deny": [],
-      "rate_channel_seconds": 120,                      // DEV testing
-      "rate_user_seconds": 90,
-      "prob_user_message": 0.15,
-      "event_window_hours": 12,
-      "react_to_bots": false,
-      "pools_file": "1433879888359854245.Dev-Test-v1.json",
-      "event_hints": ["when:", "starts", "event", "est", "soon"]
-    },
-    "1270856120377802793": {
-      "enabled": false,                                  // PROD default off
-      "channels_allow": [1399840085536407602],          // PROD: #chat (autopost channel)
-      "channels_deny": [],
-      "rate_channel_seconds": 300,
-      "rate_user_seconds": 120,
-      "prob_user_message": 0.06,
-      "event_window_hours": 12,
-      "react_to_bots": false,
-      "pools_file": "1270856120377802793.Prod.v1.json",
-      "event_hints": ["when:", "starts", "event", "est", "soon"]
-    }
+  "1270856120377802793": {  /* TLL / PROD */
+    "enabled": false,
+    "rate_channel_seconds": 300,
+    "rate_user_seconds": 90,
+    "prob_user_message": 0.06,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": ["1399840085536407602"],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072"
+  },
+  "1433879888359854245": {  /* AURA-dev / DEV */
+    "enabled": true,
+    "rate_channel_seconds": 120,
+    "rate_user_seconds": 45,
+    "prob_user_message": 0.15,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": ["1433890538834104330"],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072"
   }
 }
