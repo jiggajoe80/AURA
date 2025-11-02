@@ -1,5 +1,5 @@
 {
-  "1270856120377802793": {  /* TLL / PROD */
+  "1270856120377802793": {
     "enabled": false,
     "rate_channel_seconds": 300,
     "rate_user_seconds": 90,
@@ -10,7 +10,7 @@
     "channels_deny": [],
     "log_channel_id": "1434273148856963072"
   },
-  "1433879888359854245": {  /* AURA-dev / DEV */
+  "1433879888359854245": {
     "enabled": true,
     "rate_channel_seconds": 120,
     "rate_user_seconds": 45,
