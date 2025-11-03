@@ -1,194 +1,171 @@
 # cogs/emoji_diag.py
-from __future__ import annotations
-
 import json
-import re
+import random
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-ROOT_DIR = Path(__file__).parent.parent
-EMOJI_DIR = ROOT_DIR / "data" / "emoji"
-CONFIG_PATH = EMOJI_DIR / "config.json"
-POOLS_DIR = EMOJI_DIR / "pools"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "emoji"
+POOLS_DIR = DATA_DIR / "pools"
+CONFIG_PATH = DATA_DIR / "config.json"
 
-CUSTOM_RE = re.compile(r"^<a?:([A-Za-z0-9_]+):(\d+)>$")
+def _is_custom(emoji_str: str) -> bool:
+    # Custom static: <:name:id>, animated: <a:name:id>
+    return emoji_str.startswith("<:" ) or emoji_str.startswith("<a:")
 
+def _sample_mixed(pool: List[str], max_custom: int = 2, max_unicode: int = 2) -> List[str]:
+    """Return up to 2 custom + up to 2 unicode (shuffled)."""
+    customs  = [e for e in pool if _is_custom(e)]
+    unicodes = [e for e in pool if not _is_custom(e)]
+    picks: List[str] = []
+    if customs:
+        picks += random.sample(customs, min(max_custom, len(customs)))
+    if unicodes:
+        picks += random.sample(unicodes, min(max_unicode, len(unicodes)))
+    random.shuffle(picks)
+    return picks
 
-def _is_unicode_emoji(token: str) -> bool:
-    # crude but reliable: anything that's not a custom <...:id> token and is 1–3 chars we accept as unicode emoji
-    if CUSTOM_RE.match(token):
-        return False
-    # allow multi-codepoint emoji like "✨" or "🌟" etc.
-    return any(ord(ch) > 0x1FFF for ch in token)
+def _slug_from_name(name: str) -> str:
+    # basic slug that matches Pool.AURA_STARTER_2.json style
+    keep = []
+    for ch in name.upper().replace(" ", "_"):
+        if ch.isalnum() or ch == "_":
+            keep.append(ch)
+    return "".join(keep)
 
+def _resolve_pool_file_for_guild(g: discord.Guild) -> Optional[Path]:
+    """Best-effort: prefer files that start with guild_id, else Pool.<SLUG>.json"""
+    gid = str(g.id)
+    id_matches = sorted(POOLS_DIR.glob(f"{gid}*.json"))
+    if id_matches:
+        return id_matches[0]
+    alt = POOLS_DIR / f"Pool.{_slug_from_name(g.name)}.json"
+    if alt.exists():
+        return alt
+    return None
 
-def _parse_custom(token: str) -> Tuple[str, int] | None:
-    m = CUSTOM_RE.match(token)
-    if not m:
-        return None
-    name, id_str = m.group(1), m.group(2)
+def _load_config() -> Dict[str, dict]:
     try:
-        return name, int(id_str)
-    except ValueError:
-        return None
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
+def _enabled_from_config(cfg: Dict[str, dict], guild_id: int) -> Optional[bool]:
+    entry = cfg.get(str(guild_id))
+    if isinstance(entry, dict) and "enabled" in entry:
+        return bool(entry["enabled"])
+    return None
 
 class EmojiDiag(commands.Cog):
-    """Diagnostics for Aura emoji pools and config."""
-
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    # ---------- internal helpers ----------
+    group = app_commands.Group(name="emoji_diag", description="Emoji diagnostic tools")
 
-    def _load_config(self) -> Dict:
-        try:
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-
-    def _load_pool(self, pool_file: str) -> Dict[str, List[str]]:
-        path = POOLS_DIR / pool_file
-        if not path.exists():
-            return {"autopost": [], "user_message": [], "event_soon": []}
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {"autopost": [], "user_message": [], "event_soon": []}
-        # normalize keys we care about
-        return {
-            "autopost": list(data.get("autopost", [])),
-            "user_message": list(data.get("user_message", [])),
-            "event_soon": list(data.get("event_soon", [])),
+    # ---------- helpers to talk to the Emoji cog (if available) ----------
+    def _fetch_state_from_cog(self, guild_id: int) -> Optional[dict]:
+        """
+        Ask the Emoji cog for its in-memory view.
+        Tries a few method names to stay compatible with your current file.
+        Expected shape:
+        {
+          "enabled": bool,
+          "pool_file": "filename.json",
+          "buckets": {"autopost": [...], "user_message": [...], "event_soon": [...]}
         }
+        """
+        cog = self.bot.get_cog("Emoji")
+        if not cog:
+            return None
+        candidates = ("peek_state", "debug_state", "peek_guild", "state_for_guild")
+        for name in candidates:
+            fn = getattr(cog, name, None)
+            if callable(fn):
+                try:
+                    return fn(guild_id)
+                except Exception:
+                    continue
+        return None
 
-    def _bot_emoji_id_map(self) -> Dict[int, discord.Guild]:
-        """Map custom emoji id -> owning guild that the bot can see."""
-        mapping: Dict[int, discord.Guild] = {}
-        for g in self.bot.guilds:
-            for e in g.emojis:
-                mapping[e.id] = g
-        return mapping
+    def _hydrate_state_fallback(self, guild: discord.Guild) -> Optional[dict]:
+        """Fallback if the Emoji cog doesn't expose a state accessor."""
+        pool_path = _resolve_pool_file_for_guild(guild)
+        if not pool_path:
+            return None
+        try:
+            pools = json.loads(pool_path.read_text(encoding="utf-8"))
+            # normalize expected buckets
+            buckets = {
+                "autopost": pools.get("autopost", []) or [],
+                "user_message": pools.get("user_message", []) or [],
+                "event_soon": pools.get("event_soon", []) or [],
+            }
+            cfg = _load_config()
+            enabled = _enabled_from_config(cfg, guild.id)
+            return {
+                "enabled": bool(enabled) if enabled is not None else False,
+                "pool_file": pool_path.name,
+                "buckets": buckets,
+            }
+        except Exception:
+            return None
 
-    def _usable_in_guild(self, token: str, guild: discord.Guild, id_map: Dict[int, discord.Guild]) -> bool:
-        if _is_unicode_emoji(token):
-            return True
-        parsed = _parse_custom(token)
-        if not parsed:
-            return False
-        _, eid = parsed
-        # If bot can see the emoji somewhere, Discord will allow use in this guild if the bot has "Use External Emojis".
-        # We can't evaluate channel-specific perms here; this is a coarse check for pool sanity.
-        return eid in id_map
+    def _guild_state(self, guild: discord.Guild) -> Tuple[Optional[dict], Optional[str]]:
+        """
+        Returns (state, error_message). One of them will be None.
+        """
+        if not guild:
+            return None, "No guild context."
+        state = self._fetch_state_from_cog(guild.id)
+        if state:
+            return state, None
+        # fallback to disk
+        state = self._hydrate_state_fallback(guild)
+        if state:
+            return state, None
+        return None, "No emoji config for this guild."
 
-    def _pick_usable(self, items: List[str], guild: discord.Guild, limit: int) -> List[str]:
-        id_map = self._bot_emoji_id_map()
-        usable = [t for t in items if self._usable_in_guild(t, guild, id_map)]
-        return usable[: max(0, limit)]
+    # ---------------- commands ----------------
+    @group.command(name="peek", description="Show current emoji status and a small mixed sample per bucket.")
+    async def peek(self, inter: discord.Interaction):
+        state, err = self._guild_state(inter.guild)
+        if err:
+            return await inter.response.send_message(err, ephemeral=True)
 
-    # ---------- slash commands ----------
+        enabled = state.get("enabled", False)
+        pool_file = state.get("pool_file", "unknown")
+        buckets: Dict[str, List[str]] = state.get("buckets", {})
 
-    group = app_commands.Group(name="emoji_diag", description="Emoji diagnostics")
+        # Build embed
+        emb = discord.Embed(
+            title="Emoji config",
+            color=discord.Color.blurple()
+        )
+        emb.add_field(
+            name="Guild",
+            value=f"{inter.guild.name} (`{inter.guild.id}`)",
+            inline=False
+        )
+        emb.add_field(name="Enabled", value=str(bool(enabled)), inline=False)
+        emb.add_field(name="Pool file", value=f"`{pool_file}`", inline=False)
 
-    @group.command(name="peek", description="Quick status: enabled, pool file, bucket sizes, and a small sample.")
-    async def peek(self, inter: discord.Interaction) -> None:
-        cfg = self._load_config()
-        g = inter.guild
-        if g is None:
-            return await inter.response.send_message("Run this in a server.", ephemeral=True)
+        # Per-bucket totals + mixed sample
+        lines = []
+        for bucket_name in ("autopost", "user_message", "event_soon"):
+            pool = buckets.get(bucket_name, []) or []
+            total = len(pool)
+            if total == 0:
+                lines.append(f"• **{bucket_name}**: 0 total | sample → *(none usable)*")
+                continue
+            sample = _sample_mixed(pool, max_custom=2, max_unicode=2)
+            sample_text = " ".join(sample) if sample else "—"
+            lines.append(f"• **{bucket_name}**: {total} total | sample → {sample_text}")
+        emb.add_field(name="Buckets:", value="\n".join(lines), inline=False)
 
-        entry = cfg.get(str(g.id))
-        if not entry:
-            return await inter.response.send_message("No emoji config for this guild.", ephemeral=True)
-
-        pool_file = entry.get("pool_file", "(none)")
-        enabled = bool(entry.get("enabled", False))
-        pool = self._load_pool(pool_file)
-
-        # small samples of what looks usable from each bucket
-        sample_autopost = self._pick_usable(pool.get("autopost", []), g, 6)
-        sample_user = self._pick_usable(pool.get("user_message", []), g, 6)
-        sample_event = self._pick_usable(pool.get("event_soon", []), g, 6)
-
-        lines = [
-            f"Guild: **{g.name}** (`{g.id}`)",
-            f"Enabled: **{enabled}**",
-            f"Pool file: `{pool_file}`",
-            "",
-            f"Buckets:",
-            f"• autopost: {len(pool.get('autopost', []))} total | sample → {' '.join(sample_autopost) if sample_autopost else '(none usable)'}",
-            f"• user_message: {len(pool.get('user_message', []))} total | sample → {' '.join(sample_user) if sample_user else '(none usable)'}",
-            f"• event_soon: {len(pool.get('event_soon', []))} total | sample → {' '.join(sample_event) if sample_event else '(none usable)'}",
-        ]
-        await inter.response.send_message("\n".join(lines), ephemeral=True)
-
-    @group.command(name="usable", description="Show first N usable emojis from a bucket for this guild.")
-    @app_commands.describe(
-        bucket="Which bucket to inspect",
-        limit="Max items to display (default 10)"
-    )
-    @app_commands.choices(
-        bucket=[
-            app_commands.Choice(name="autopost", value="autopost"),
-            app_commands.Choice(name="user_message", value="user_message"),
-            app_commands.Choice(name="event_soon", value="event_soon"),
-        ]
-    )
-    async def usable(self, inter: discord.Interaction, bucket: app_commands.Choice[str], limit: int = 10) -> None:
-        cfg = self._load_config()
-        g = inter.guild
-        if g is None:
-            return await inter.response.send_message("Run this in a server.", ephemeral=True)
-
-        entry = cfg.get(str(g.id))
-        if not entry:
-            return await inter.response.send_message("No emoji config for this guild.", ephemeral=True)
-
-        pool_file = entry.get("pool_file", "(none)")
-        pool = self._load_pool(pool_file)
-        items = pool.get(bucket.value, [])
-
-        picked = self._pick_usable(items, g, max(1, min(50, limit)))
-        if not picked:
-            return await inter.response.send_message(
-                f"`{bucket.value}`: no usable emojis found (check pool contents or external-emoji permission).",
-                ephemeral=True,
-            )
-        await inter.response.send_message(f"`{bucket.value}` usable → {' '.join(picked)}", ephemeral=True)
-
-    @group.command(name="sample", description="Show first N raw entries from a bucket (no usability check).")
-    @app_commands.describe(
-        bucket="Which bucket to sample",
-        limit="Max items to display (default 10)"
-    )
-    @app_commands.choices(
-        bucket=[
-            app_commands.Choice(name="autopost", value="autopost"),
-            app_commands.Choice(name="user_message", value="user_message"),
-            app_commands.Choice(name="event_soon", value="event_soon"),
-        ]
-    )
-    async def sample(self, inter: discord.Interaction, bucket: app_commands.Choice[str], limit: int = 10) -> None:
-        cfg = self._load_config()
-        g = inter.guild
-        if g is None:
-            return await inter.response.send_message("Run this in a server.", ephemeral=True)
-
-        entry = cfg.get(str(g.id))
-        if not entry:
-            return await inter.response.send_message("No emoji config for this guild.", ephemeral=True)
-
-        pool = self._load_pool(entry.get("pool_file", "(none)"))
-        items = pool.get(bucket.value, [])[: max(1, min(50, limit))]
-        if not items:
-            return await inter.response.send_message(f"`{bucket.value}` is empty.", ephemeral=True)
-
-        await inter.response.send_message(f"`{bucket.value}` sample → {' '.join(items)}", ephemeral=True)
-
+        await inter.response.send_message(embed=emb, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(EmojiDiag(bot))
