@@ -1,7 +1,51 @@
-{ 
+{
   "default_pool_file": "POOL.GLOBAL.json",
-  "1270856120377802793": { ... },
-  "1433879888359854245": { ... },
-  "1434878141699985520": { ... },
-  "1434956505924370606": { ... }
+
+  "1270856120377802793": {
+    "enabled": false,
+    "rate_channel_seconds": 300,
+    "rate_user_seconds": 90,
+    "prob_user_message": 0.06,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": ["1399840085536407602"],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072"
+  },
+
+  "1433879888359854245": {
+    "enabled": true,
+    "rate_channel_seconds": 120,
+    "rate_user_seconds": 45,
+    "prob_user_message": 0.15,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": ["1433890538834104330"],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072"
+  },
+
+  "1434878141699985520": {
+    "enabled": false,
+    "rate_channel_seconds": 120,
+    "rate_user_seconds": 45,
+    "prob_user_message": 0.15,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": [],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072"
+  },
+
+  "1434956505924370606": {
+    "enabled": false,
+    "rate_channel_seconds": 120,
+    "rate_user_seconds": 45,
+    "prob_user_message": 0.15,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": [],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072"
+  }
 }
