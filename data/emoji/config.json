@@ -8,7 +8,8 @@
     "react_to_bots": false,
     "channels_allow": ["1399840085536407602"],
     "channels_deny": [],
-    "log_channel_id": "1434273148856963072"
+    "log_channel_id": "1434273148856963072",
+    "pool_file": "1270856120377802793.Prod.v1.json"
   },
   "1433879888359854245": {
     "enabled": true,
@@ -19,6 +20,31 @@
     "react_to_bots": false,
     "channels_allow": ["1433890538834104330"],
     "channels_deny": [],
-    "log_channel_id": "1434273148856963072"
+    "log_channel_id": "1434273148856963072",
+    "pool_file": "1433879888359854245.Dev-Test-v1.json"
+  },
+  "1434878141699985520": {
+    "enabled": false,
+    "rate_channel_seconds": 120,
+    "rate_user_seconds": 45,
+    "prob_user_message": 0.15,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": [],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072",
+    "pool_file": "1434878141699985520.Dev-Test-v1.json"
+  },
+  "1434956505924370606": {
+    "enabled": false,
+    "rate_channel_seconds": 120,
+    "rate_user_seconds": 45,
+    "prob_user_message": 0.15,
+    "event_window_hours": 6,
+    "react_to_bots": false,
+    "channels_allow": [],
+    "channels_deny": [],
+    "log_channel_id": "1434273148856963072",
+    "pool_file": "Pool.AURA_STARTER_2.json"
   }
 }
