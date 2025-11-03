@@ -1,140 +1,194 @@
+# cogs/emoji_diag.py
+from __future__ import annotations
+
 import json
-import logging
+import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, List, Tuple
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-log = logging.getLogger("Aura.emoji_diag")
+ROOT_DIR = Path(__file__).parent.parent
+EMOJI_DIR = ROOT_DIR / "data" / "emoji"
+CONFIG_PATH = EMOJI_DIR / "config.json"
+POOLS_DIR = EMOJI_DIR / "pools"
 
-DATA = Path(__file__).resolve().parents[1] / "data"
-CONFIG_PATH = DATA / "emoji" / "config.json"
-POOLS_DIR = DATA / "emoji" / "pools"
+CUSTOM_RE = re.compile(r"^<a?:([A-Za-z0-9_]+):(\d+)>$")
 
-def _load_config() -> dict:
-    try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception as e:
-        log.error(f"[emoji_diag] failed to read config.json: {e}")
-        return {}
 
-def _pool_for_guild(guild_id: int) -> Optional[dict]:
-    cfg = _load_config()
-    # config maps guild_id (as string) -> filename
-    filename = cfg.get(str(guild_id))
-    if not filename:
+def _is_unicode_emoji(token: str) -> bool:
+    # crude but reliable: anything that's not a custom <...:id> token and is 1–3 chars we accept as unicode emoji
+    if CUSTOM_RE.match(token):
+        return False
+    # allow multi-codepoint emoji like "✨" or "🌟" etc.
+    return any(ord(ch) > 0x1FFF for ch in token)
+
+
+def _parse_custom(token: str) -> Tuple[str, int] | None:
+    m = CUSTOM_RE.match(token)
+    if not m:
         return None
+    name, id_str = m.group(1), m.group(2)
     try:
-        pool = json.loads((POOLS_DIR / filename).read_text(encoding="utf-8"))
-        return pool if isinstance(pool, dict) else None
-    except Exception as e:
-        log.error(f"[emoji_diag] failed to read pool {filename}: {e}")
+        return name, int(id_str)
+    except ValueError:
         return None
 
-def _parse_emoji(s: str) -> Tuple[Optional[discord.PartialEmoji], Optional[str]]:
-    """
-    Accepts: "✨" or "<:raccoon_wink:123456789012345678>" or "<a:name:ID>"
-    Returns (partial, unicode) where only one is non-None.
-    """
-    s = s.strip()
-    if s.startswith("<") and s.endswith(">"):
-        try:
-            pe = discord.PartialEmoji.from_str(s)
-            return pe, None
-        except Exception:
-            return None, None
-    # assume unicode
-    return None, s if s else None
 
 class EmojiDiag(commands.Cog):
+    """Diagnostics for Aura emoji pools and config."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    diag = app_commands.Group(name="emoji_diag", description="Diagnostics for emoji availability")
+    # ---------- internal helpers ----------
 
-    @diag.command(name="usable", description="List usable emoji from this guild's configured pool")
-    @app_commands.describe(bucket="Which bucket to check (autopost, user_message, event_soon)", limit="How many to sample (1-25)")
-    async def usable(self, interaction: discord.Interaction, bucket: str = "autopost", limit: int = 10):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        if not interaction.guild:
-            return await interaction.followup.send("Run this in a server.", ephemeral=True)
-
-        pool = _pool_for_guild(interaction.guild.id)
-        if not pool or bucket not in pool:
-            return await interaction.followup.send(f"No pool configured or bucket '{bucket}' missing.", ephemeral=True)
-
-        items = list(pool[bucket])[: max(1, min(25, limit))]
-        ok, bad = [], []
-        for s in items:
-            pe, uni = _parse_emoji(s)
-            try:
-                if pe:
-                    # To be usable here: Aura must see the source guild AND target guild must allow external emoji
-                    # add_reaction on a dummy ephemeral won't work; we probe via to_dict() and presence only.
-                    # Practical probe: try to send then delete a tiny message with the emoji.
-                    msg = await interaction.channel.send(s)
-                    await msg.delete()
-                    ok.append(s)
-                elif uni:
-                    msg = await interaction.channel.send(uni)
-                    await msg.delete()
-                    ok.append(uni)
-                else:
-                    bad.append(s)
-            except Exception as e:
-                bad.append(f"{s}  —  {type(e).__name__}: {e}")
-
-        lines = []
-        lines.append(f"Guild: **{interaction.guild.name}** ({interaction.guild.id}) • Bucket: `{bucket}` • Sample: {len(items)}")
-        lines.append(f"✅ Usable: {len(ok)}")
-        if ok:
-            lines.append("  " + ", ".join(ok))
-        lines.append(f"⛔ Not usable here: {len(bad)}")
-        if bad:
-            lines.append("  " + "\n  ".join(bad))
-
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
-
-    @diag.command(name="try", description="Try reacting here with a specific emoji (unicode or <:name:id>)")
-    @app_commands.describe(emoji="Unicode or custom syntax like <:name:123...>", to_last="React to your last message in this channel instead of this command")
-    async def try_react(self, interaction: discord.Interaction, emoji: str, to_last: bool = False):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        if not interaction.guild:
-            return await interaction.followup.send("Run this in a server.", ephemeral=True)
-
-        pe, uni = _parse_emoji(emoji)
-        target = None
-
+    def _load_config(self) -> Dict:
         try:
-            if to_last:
-                # Fetch the user's last message in this channel (excluding this slash)
-                async for m in interaction.channel.history(limit=20):
-                    if m.author.id == interaction.user.id and m.id != interaction.message.id:
-                        target = m
-                        break
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
 
-            if target is None:
-                target = await interaction.channel.send("emoji_diag probe")
+    def _load_pool(self, pool_file: str) -> Dict[str, List[str]]:
+        path = POOLS_DIR / pool_file
+        if not path.exists():
+            return {"autopost": [], "user_message": [], "event_soon": []}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"autopost": [], "user_message": [], "event_soon": []}
+        # normalize keys we care about
+        return {
+            "autopost": list(data.get("autopost", [])),
+            "user_message": list(data.get("user_message", [])),
+            "event_soon": list(data.get("event_soon", [])),
+        }
 
-            try:
-                if pe:
-                    await target.add_reaction(pe)
-                elif uni:
-                    await target.add_reaction(uni)
-                else:
-                    raise ValueError("Could not parse emoji")
-                await interaction.followup.send(f"✅ Reacted with {emoji}", ephemeral=True)
-            finally:
-                # Clean the probe message if we created it
-                if target.content == "emoji_diag probe":
-                    try:
-                        await target.delete()
-                    except Exception:
-                        pass
-        except Exception as e:
-            await interaction.followup.send(f"⛔ Failed to use {emoji} here — {type(e).__name__}: {e}", ephemeral=True)
+    def _bot_emoji_id_map(self) -> Dict[int, discord.Guild]:
+        """Map custom emoji id -> owning guild that the bot can see."""
+        mapping: Dict[int, discord.Guild] = {}
+        for g in self.bot.guilds:
+            for e in g.emojis:
+                mapping[e.id] = g
+        return mapping
+
+    def _usable_in_guild(self, token: str, guild: discord.Guild, id_map: Dict[int, discord.Guild]) -> bool:
+        if _is_unicode_emoji(token):
+            return True
+        parsed = _parse_custom(token)
+        if not parsed:
+            return False
+        _, eid = parsed
+        # If bot can see the emoji somewhere, Discord will allow use in this guild if the bot has "Use External Emojis".
+        # We can't evaluate channel-specific perms here; this is a coarse check for pool sanity.
+        return eid in id_map
+
+    def _pick_usable(self, items: List[str], guild: discord.Guild, limit: int) -> List[str]:
+        id_map = self._bot_emoji_id_map()
+        usable = [t for t in items if self._usable_in_guild(t, guild, id_map)]
+        return usable[: max(0, limit)]
+
+    # ---------- slash commands ----------
+
+    group = app_commands.Group(name="emoji_diag", description="Emoji diagnostics")
+
+    @group.command(name="peek", description="Quick status: enabled, pool file, bucket sizes, and a small sample.")
+    async def peek(self, inter: discord.Interaction) -> None:
+        cfg = self._load_config()
+        g = inter.guild
+        if g is None:
+            return await inter.response.send_message("Run this in a server.", ephemeral=True)
+
+        entry = cfg.get(str(g.id))
+        if not entry:
+            return await inter.response.send_message("No emoji config for this guild.", ephemeral=True)
+
+        pool_file = entry.get("pool_file", "(none)")
+        enabled = bool(entry.get("enabled", False))
+        pool = self._load_pool(pool_file)
+
+        # small samples of what looks usable from each bucket
+        sample_autopost = self._pick_usable(pool.get("autopost", []), g, 6)
+        sample_user = self._pick_usable(pool.get("user_message", []), g, 6)
+        sample_event = self._pick_usable(pool.get("event_soon", []), g, 6)
+
+        lines = [
+            f"Guild: **{g.name}** (`{g.id}`)",
+            f"Enabled: **{enabled}**",
+            f"Pool file: `{pool_file}`",
+            "",
+            f"Buckets:",
+            f"• autopost: {len(pool.get('autopost', []))} total | sample → {' '.join(sample_autopost) if sample_autopost else '(none usable)'}",
+            f"• user_message: {len(pool.get('user_message', []))} total | sample → {' '.join(sample_user) if sample_user else '(none usable)'}",
+            f"• event_soon: {len(pool.get('event_soon', []))} total | sample → {' '.join(sample_event) if sample_event else '(none usable)'}",
+        ]
+        await inter.response.send_message("\n".join(lines), ephemeral=True)
+
+    @group.command(name="usable", description="Show first N usable emojis from a bucket for this guild.")
+    @app_commands.describe(
+        bucket="Which bucket to inspect",
+        limit="Max items to display (default 10)"
+    )
+    @app_commands.choices(
+        bucket=[
+            app_commands.Choice(name="autopost", value="autopost"),
+            app_commands.Choice(name="user_message", value="user_message"),
+            app_commands.Choice(name="event_soon", value="event_soon"),
+        ]
+    )
+    async def usable(self, inter: discord.Interaction, bucket: app_commands.Choice[str], limit: int = 10) -> None:
+        cfg = self._load_config()
+        g = inter.guild
+        if g is None:
+            return await inter.response.send_message("Run this in a server.", ephemeral=True)
+
+        entry = cfg.get(str(g.id))
+        if not entry:
+            return await inter.response.send_message("No emoji config for this guild.", ephemeral=True)
+
+        pool_file = entry.get("pool_file", "(none)")
+        pool = self._load_pool(pool_file)
+        items = pool.get(bucket.value, [])
+
+        picked = self._pick_usable(items, g, max(1, min(50, limit)))
+        if not picked:
+            return await inter.response.send_message(
+                f"`{bucket.value}`: no usable emojis found (check pool contents or external-emoji permission).",
+                ephemeral=True,
+            )
+        await inter.response.send_message(f"`{bucket.value}` usable → {' '.join(picked)}", ephemeral=True)
+
+    @group.command(name="sample", description="Show first N raw entries from a bucket (no usability check).")
+    @app_commands.describe(
+        bucket="Which bucket to sample",
+        limit="Max items to display (default 10)"
+    )
+    @app_commands.choices(
+        bucket=[
+            app_commands.Choice(name="autopost", value="autopost"),
+            app_commands.Choice(name="user_message", value="user_message"),
+            app_commands.Choice(name="event_soon", value="event_soon"),
+        ]
+    )
+    async def sample(self, inter: discord.Interaction, bucket: app_commands.Choice[str], limit: int = 10) -> None:
+        cfg = self._load_config()
+        g = inter.guild
+        if g is None:
+            return await inter.response.send_message("Run this in a server.", ephemeral=True)
+
+        entry = cfg.get(str(g.id))
+        if not entry:
+            return await inter.response.send_message("No emoji config for this guild.", ephemeral=True)
+
+        pool = self._load_pool(entry.get("pool_file", "(none)"))
+        items = pool.get(bucket.value, [])[: max(1, min(50, limit))]
+        if not items:
+            return await inter.response.send_message(f"`{bucket.value}` is empty.", ephemeral=True)
+
+        await inter.response.send_message(f"`{bucket.value}` sample → {' '.join(items)}", ephemeral=True)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(EmojiDiag(bot))
