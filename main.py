@@ -33,10 +33,11 @@ INITIAL_EXTENSIONS = [
     "cogs.emoji_ids",
 ]
 
-DATA_DIR = Path(__file__).parent / "data"
+BASE_DIR   = Path(__file__).parent
+DATA_DIR   = BASE_DIR / "data"
 PRESENCE_FILE = "AURA.PRESENCE.v2.json"
 HOURLIES_FILE = "AURA.HOURLIES.v2.json"
-JOKES_FILE = "jokes.json"
+JOKES_FILE    = "jokes.json"
 
 # Per-guild config files
 AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
@@ -44,6 +45,9 @@ GUILD_FLAGS_FILE  = DATA_DIR / "guild_flags.json"
 
 LOG_CHANNEL_ID = 1427716795615285329
 REMINDERS_FILE = DATA_DIR / "reminders.json"
+
+# Persisted alternator state (hardens rotation across restarts)
+AUTOPOST_STATE_FILE = DATA_DIR / "autopost_state.json"
 
 def _load_json(p: Path, default):
     try:
@@ -106,6 +110,19 @@ def _run():
 def keep_alive():
     Thread(target=_run, daemon=True).start()
 
+# ───────── alternator persistence ─────────
+def _load_autopost_state() -> dict:
+    try:
+        return json.loads(AUTOPOST_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"last_type": None}  # None → will start with "joke"
+
+def _save_autopost_state(state: dict) -> None:
+    try:
+        AUTOPOST_STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
+    except Exception:
+        pass
+
 # ───────── bot ─────────
 intents = discord.Intents.default()
 intents.message_content = True
@@ -122,12 +139,13 @@ class AuraBot(commands.Bot):
         self.used_presence_today = []
         self.used_hourly_today = []
         self.used_jokes_today = []
-        self._hourly_flip = False
         self.last_reset_date = None
-        self.last_channel_activity: dict[int, datetime] = {}  # channel_id -> last message time
-        self.last_hourly_post: dict[int, datetime] = {}       # channel_id -> last hourly
+        self.last_channel_activity: dict[int, datetime] = {}  # channel_id -> last msg time
+        self.last_hourly_post: dict[int, datetime] = {}       # channel_id -> last hourly time
         self.cooldowns = {}
         self._hourly_enabled = True
+        # alternator state (persisted)
+        self.autopost_state: dict = _load_autopost_state()
 
     async def setup_hook(self):
         for ext in INITIAL_EXTENSIONS:
@@ -145,10 +163,12 @@ class AuraBot(commands.Bot):
     # per-guild config
     @property
     def autopost_map(self) -> dict:
+        # guild_id -> channel_id
         return _load_json(AUTOPOST_MAP_FILE, {})
 
     @property
     def guild_flags(self) -> dict:
+        # guild_id -> { silent: bool }
         return _load_json(GUILD_FLAGS_FILE, {})
 
     def is_silent(self, guild_id: int) -> bool:
@@ -194,7 +214,7 @@ class AuraBot(commands.Bot):
         self.used_jokes_today.append(line)
         return _format_joke(line)
 
-    # cooldown helper
+    # cooldown helper (used by /ping etc.)
     def check_cooldown(self, user_id, command_name):
         key = f"{user_id}_{command_name}"
         now = datetime.utcnow()
@@ -270,16 +290,17 @@ bot.jokes_pool = JOKES_LINES.copy()
 @bot.event
 async def on_ready():
     logger.info(f"{bot.user} has connected to Discord!")
-
     # diagnostic: list all guilds Aura is currently in
     logger.info(f"Guilds: {', '.join(f'{g.name} ({g.id})' for g in bot.guilds) or 'NONE'}")
 
     bot.load_reminders()
     bot.reset_daily_pools()
 
+    # set initial presence
     presence_text = bot.get_next_presence()
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=presence_text))
 
+    # start tasks if not already
     if not check_reminders.is_running(): check_reminders.start()
     if not rotate_presence.is_running(): rotate_presence.start()
     if not check_hourlies.is_running():   check_hourlies.start()
@@ -357,14 +378,18 @@ async def rotate_presence():
 @tasks.loop(minutes=1)
 async def check_hourlies():
     """
-    Once per hour per guild, if its target channel has been quiet 30+ min,
-    post an hourly (alternating joke/hourly). Honors guild silent flag.
+    Every minute:
+      - For each guild's target channel:
+          * If quiet ≥ 30 min AND ≥ 60 min since last post
+            → post next item based on persisted alternator:
+                 joke → hourly → joke → hourly ...
+      - Honors per-guild 'silent' flag.
     """
     if not bot._hourly_enabled:
         return
 
     now = datetime.utcnow()
-    ap_map = bot.autopost_map
+    ap_map = bot.autopost_map  # guild_id -> channel_id
 
     for guild in bot.guilds:
         if bot.is_silent(guild.id):
@@ -373,6 +398,7 @@ async def check_hourlies():
         ch_id = ap_map.get(str(guild.id))
         if not ch_id:
             continue
+
         try:
             ch = guild.get_channel(int(ch_id)) or await bot.fetch_channel(int(ch_id))
         except Exception:
@@ -387,15 +413,24 @@ async def check_hourlies():
 
         if inactive_seconds >= 1800 and since_last >= 3600:
             try:
-                bot._hourly_flip = not bot._hourly_flip
+                # persisted alternator
+                last_type = (bot.autopost_state or {}).get("last_type")
+                next_type = "hourly" if last_type == "joke" else "joke"
+
                 message: str | None = None
-                if bot._hourly_flip and bot.jokes_pool:
-                    message = bot.get_next_joke()
-                if not message:
+                if next_type == "joke":
+                    message = bot.get_next_joke() or bot.get_next_hourly()
+                else:
                     message = bot.get_next_hourly()
+
                 await ch.send(message)
                 bot.last_hourly_post[ch.id] = now
-                logger.info(f"[{guild.name}] hourly posted in #{ch.name}")
+
+                # save alternator state
+                bot.autopost_state["last_type"] = next_type
+                _save_autopost_state(bot.autopost_state)
+
+                logger.info(f"[{guild.name}] hourly posted in #{getattr(ch, 'name', ch.id)} ({next_type})")
             except Exception as e:
                 logger.error(f"Hourly post error in {guild.name}: {e}")
 
