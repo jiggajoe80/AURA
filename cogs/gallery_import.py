@@ -1,144 +1,184 @@
 # cogs/gallery_import.py
 from __future__ import annotations
 
-import asyncio
 import json
-import re
+import logging
+from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Iterable, List, Set, Tuple
+from typing import List, Dict, Set, Any, Optional
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-GALLERY_JSON = Path("data/gallery/gallery.json")
-SUPPORTED_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm")
+GALLERY_PATH = Path("data/gallery.json")
+LOG = logging.getLogger("Aura.gallery")
 
-MEDIA_URL_RE = re.compile(
-    r"https://[^\s)<>]+(?:\.jpg|\.jpeg|\.png|\.webp|\.gif|\.mp4|\.webm)(?:\?[^\s<>)]*)?",
-    re.IGNORECASE,
-)
+MEDIA_MIME_PREFIXES = ("image/", "video/")  # what we index in v1
+MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".webm"}
 
-def _load_gallery() -> dict:
-    if not GALLERY_JSON.exists():
-        GALLERY_JSON.parent.mkdir(parents=True, exist_ok=True)
+@dataclass
+class GalleryEntry:
+    url: str
+    kind: str           # "image" | "video" | "file"
+    filename: str
+    message_id: int
+    channel_id: int
+    author_id: int
+    timestamp: str      # ISO from Discord Message.created_at.isoformat()
+
+def _load_gallery() -> Dict[str, Any]:
+    """
+    Load gallery tolerantly:
+    - If file missing -> return {"entries":[]}
+    - If file is a list -> wrap as {"entries": <that list>}
+    - If file is a dict missing 'entries' -> add it
+    """
+    if not GALLERY_PATH.exists():
         return {"entries": []}
-    return json.loads(GALLERY_JSON.read_text(encoding="utf-8") or '{"entries": []}')
 
-def _atomic_write_gallery(data: dict) -> None:
-    tmp = GALLERY_JSON.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(GALLERY_JSON)
+    try:
+        data = json.loads(GALLERY_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        LOG.error("[gallery] failed to read JSON: %s", e, exc_info=True)
+        return {"entries": []}
 
-def _is_media_url(url: str) -> bool:
-    if not url:
-        return False
-    low = url.lower()
-    # Fast extension check first
-    for ext in SUPPORTED_EXTS:
-        if low.endswith(ext) or f"{ext}?" in low:
+    if isinstance(data, list):
+        # legacy v0 shape
+        return {"entries": data}
+    if not isinstance(data, dict):
+        return {"entries": []}
+    if "entries" not in data or not isinstance(data["entries"], list):
+        data["entries"] = []
+    return data
+
+def _save_gallery(gallery: Dict[str, Any]) -> None:
+    gallery.setdefault("entries", [])
+    # pretty but compact enough
+    GALLERY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    GALLERY_PATH.write_text(json.dumps(gallery, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def _looks_like_media(attachment: discord.Attachment) -> bool:
+    # Prefer content_type when Discord provides it
+    if attachment.content_type:
+        if any(attachment.content_type.startswith(p) for p in MEDIA_MIME_PREFIXES):
             return True
-    # Fallback: regex for safety
-    return bool(MEDIA_URL_RE.search(url))
+    # Fallback to extension check
+    if attachment.filename:
+        if Path(attachment.filename).suffix.lower() in MEDIA_EXTS:
+            return True
+    return False
 
-def _tags_from_text(text: str) -> List[str]:
-    raw = re.findall(r"#([A-Za-z0-9_]+)", text or "")
-    return list({t.lower() for t in raw})
+def _entry_kind(attachment: discord.Attachment) -> str:
+    ct = attachment.content_type or ""
+    if ct.startswith("image/"):
+        return "image"
+    if ct.startswith("video/"):
+        return "video"
+    # fallback by extension
+    ext = Path(attachment.filename or "").suffix.lower()
+    if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+        return "image"
+    if ext in {".mp4", ".mov", ".webm"}:
+        return "video"
+    return "file"
 
-def _parse_tag_input(tag_text: str | None) -> List[str]:
-    if not tag_text:
-        return []
-    # split on commas or spaces, normalize and dedupe
-    parts = re.split(r"[,\s]+", tag_text.strip())
-    return [t.lower() for t in dict.fromkeys(p for p in parts if p)]
-
-class GalleryImportCog(commands.Cog):
-    """Admin importer for Gallery — scrape a channel for media and add to the pool."""
-
+class GalleryImport(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.log = LOG
 
-    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.command(name="gallery_import", description="Scan a channel and import attached images/videos into the gallery.")
     @app_commands.describe(
-        channel="Channel to scan for media (attachments/embeds/links).",
-        limit="How many recent messages to scan (max 1000). Default 200.",
-        tags="Optional tags to add to each imported item (comma or space separated).",
+        channel="Channel to scan",
+        limit="Max messages to scan (1–500, default 100)",
+        oldest_first="Scan oldest first (helps on first-time bulk imports)"
     )
-    @app_commands.command(name="gallery_import", description="Import media from a channel into the Gallery.")
     async def gallery_import(
         self,
         interaction: discord.Interaction,
         channel: discord.TextChannel,
-        limit: app_commands.Range[int, 1, 1000] = 200,
-        tags: str | None = None,
+        limit: Optional[int] = 100,
+        oldest_first: Optional[bool] = False,
     ):
-        await interaction.response.defer(thinking=True, ephemeral=True)
+        # Validate inputs early
+        limit = int(limit or 100)
+        if limit < 1:
+            limit = 1
+        if limit > 500:
+            limit = 500
 
-        # Basic permission sanity: bot must read history
-        perms = channel.permissions_for(channel.guild.me)  # type: ignore
-        if not perms.read_message_history or not perms.view_channel:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        # Perm sanity: View + Read History
+        perms = channel.permissions_for(channel.guild.me)
+        if not (perms.view_channel and perms.read_message_history):
             return await interaction.followup.send(
-                f"I can’t read {channel.mention}. Please grant View Channel + Read Message History.", ephemeral=True
+                f"❌ I need View Channel + Read Message History in {channel.mention}.",
+                ephemeral=True,
             )
 
-        extra_tags = _parse_tag_input(tags)
-        # Always include 'safe' tag in v1
-        if "safe" not in extra_tags:
-            extra_tags.insert(0, "safe")
-
-        # Load existing gallery and build a set of existing URLs
         gallery = _load_gallery()
-        existing_urls: Set[str] = {e.get("url", "") for e in gallery.get("entries", []) if isinstance(e, dict)}
+        # entries can be raw dicts; normalize to a URL set for de-duplication
+        existing_urls: Set[str] = set()
+        for e in gallery.get("entries", []):
+            if isinstance(e, dict):
+                url = str(e.get("url", "")).strip()
+                if url:
+                    existing_urls.add(url)
 
-        found: List[Tuple[str, List[str]]] = []
+        added: List[GalleryEntry] = []
+        scanned = 0
 
-        async for msg in channel.history(limit=limit, oldest_first=False):
-            # 1) attachments
-            for a in msg.attachments:
-                url = a.url
-                if _is_media_url(url):
-                    tags_from_msg = _tags_from_text(msg.content)
-                    found.append((url, tags_from_msg))
+        try:
+            async for msg in channel.history(limit=limit, oldest_first=oldest_first):
+                scanned += 1
+                if not msg.attachments:
+                    continue
+                for att in msg.attachments:
+                    if not _looks_like_media(att):
+                        continue
+                    url = att.url
+                    if url in existing_urls:
+                        continue
+                    entry = GalleryEntry(
+                        url=url,
+                        kind=_entry_kind(att),
+                        filename=att.filename or "",
+                        message_id=msg.id,
+                        channel_id=channel.id,
+                        author_id=msg.author.id,
+                        timestamp=msg.created_at.isoformat(),
+                    )
+                    added.append(entry)
+                    existing_urls.add(url)
 
-            # 2) obvious embed URLs (image/video)
-            for emb in msg.embeds:
-                # Try the common fields
-                for candidate in (emb.url, getattr(getattr(emb.image, "url", None), "strip", lambda: "")(),
-                                  getattr(getattr(emb.video, "url", None), "strip", lambda: "")()):
-                    if candidate and isinstance(candidate, str) and _is_media_url(candidate):
-                        tags_from_msg = _tags_from_text(msg.content)
-                        found.append((candidate, tags_from_msg))
+        except discord.Forbidden:
+            return await interaction.followup.send(
+                f"❌ I don't have permission to read history in {channel.mention}.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            self.log.error("[gallery] import failed: %s", e, exc_info=True)
+            return await interaction.followup.send(
+                f"❌ Import failed with: {e.__class__.__name__}. Check logs.",
+                ephemeral=True,
+            )
 
-            # 3) any plain links in message content that look like media
-            for m in MEDIA_URL_RE.findall(msg.content or ""):
-                if _is_media_url(m):
-                    tags_from_msg = _tags_from_text(msg.content)
-                    found.append((m, tags_from_msg))
+        if added:
+            # normalize and extend
+            normalized = [e if isinstance(e, dict) else dict(e) for e in gallery.get("entries", [])]
+            normalized.extend(asdict(a) for a in added)
+            gallery["entries"] = normalized
+            _save_gallery(gallery)
 
-        # Dedupe in this batch and against existing
-        batch_unique: List[Tuple[str, List[str]]] = []
-        seen_batch: Set[str] = set()
-        for url, msg_tags in found:
-            if url in existing_urls or url in seen_batch:
-                continue
-            seen_batch.add(url)
-            batch_unique.append((url, msg_tags))
-
-        # Append entries
-        for url, msg_tags in batch_unique:
-            entry_tags = list(dict.fromkeys(extra_tags + msg_tags))  # keep order, dedupe
-            gallery["entries"].append({"url": url, "tags": entry_tags})
-
-        _atomic_write_gallery(gallery)
-
-        added = len(batch_unique)
-        scanned = len(found)
+        # Summary
         await interaction.followup.send(
-            f"Scanned {limit} messages in {channel.mention}.\n"
-            f"Media candidates: {scanned} | Imported (new): {added}\n"
-            f"Tags applied to each: {', '.join(extra_tags)}",
+            f"✅ Scanned {scanned} messages in {channel.mention}. "
+            f"Found {len(added)} new media item(s). "
+            f"Total now: {len(gallery.get('entries', []))}.",
             ephemeral=True,
         )
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(GalleryImportCog(bot))
+    await bot.add_cog(GalleryImport(bot))
