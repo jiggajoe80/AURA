@@ -1,15 +1,1 @@
-{
-  "entries": [
-    {
-      "url": "https://cdn.discordapp.com/attachments/123/456/clip1.mp4",
-      "kind": "video",
-      "ext": "mp4",
-      "filename": "clip1.mp4",
-      "timestamp": "2025-11-04T03:45:00Z",
-      "channel_id": "123",
-      "message_id": "456",
-      "author": "Jabberwocky",
-      "tags": ["parody","sora"]
-    }
-  ]
-}
+{ "entries": [] }
