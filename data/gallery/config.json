@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "rate_hours": 24,
+  "channels_allow": [],
+  "channels_deny": [],
+  "log_channel_id": "1434273148856963072"
+}

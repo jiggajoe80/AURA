@@ -32,6 +32,8 @@ INITIAL_EXTENSIONS = [
     "cogs.emoji",
     "cogs.emoji_ids",
     "cogs.emoji_diag",
+    "cogs.gallery",
+    "cogs.gallery_diag",
 ]
 
 BASE_DIR   = Path(__file__).parent
