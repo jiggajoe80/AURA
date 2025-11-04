@@ -6,7 +6,8 @@ import json
 import logging
 import random
 from dataclasses import dataclass
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, List, Optional
 from urllib.parse import urlparse
 
 import discord
@@ -17,6 +18,12 @@ from utils.gallery_store import read_gallery, merge_entries
 EMBED_COLOR = 0x355E3B
 IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "gif"}
 VIDEO_EXTS = {"mp4", "webm", "mov"}
+
+CONFIG_FILE = Path("data/gallery/config.json")
+CONFIG_DEFAULTS: dict[str, Any] = {
+    "allow_nsfw": False,
+    "random_include_nsfw": False,
+}
 
 logger = logging.getLogger("Aura.Gallery")
 
@@ -68,12 +75,16 @@ class Gallery(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.entries: List[dict] = read_gallery()
+        self.config: dict[str, Any] = self._load_config()
 
     def reload_entries(self) -> None:
         self.entries = read_gallery()
+        self.config = self._load_config()
         logger.info("Loaded %s gallery entries", len(self.entries))
 
     def _filter_entries(self, *, allow_nsfw: bool, tag: Optional[str] = None) -> List[dict]:
+        if allow_nsfw and not self._config_allows_nsfw():
+            allow_nsfw = False
         pool = self.entries
         if tag:
             tag_lower = tag.lower()
@@ -129,7 +140,7 @@ class Gallery(commands.Cog):
     @app_commands.command(name="gallery_random", description="Show a random gallery entry.")
     async def gallery_random(self, interaction: Interaction):
         self.reload_entries()
-        allow_nsfw = _channel_allows_nsfw(interaction.channel)
+        allow_nsfw = _channel_allows_nsfw(interaction.channel) and self._config_allows_nsfw()
         eligible = self._filter_entries(allow_nsfw=allow_nsfw)
         safe = [entry for entry in eligible if not _is_nsfw(entry)]
         if not safe:
@@ -151,7 +162,7 @@ class Gallery(commands.Cog):
     @app_commands.describe(title="Exact title of the gallery entry")
     async def gallery_show(self, interaction: Interaction, title: str):
         self.reload_entries()
-        allow_nsfw = _channel_allows_nsfw(interaction.channel)
+        allow_nsfw = _channel_allows_nsfw(interaction.channel) and self._config_allows_nsfw()
         target = next((e for e in self.entries if e.get("title", "").lower() == title.lower()), None)
         if not target:
             await interaction.response.send_message("That entry was not found.", ephemeral=True)
@@ -181,7 +192,7 @@ class Gallery(commands.Cog):
     @app_commands.describe(tag="Tag to search for")
     async def gallery_tag(self, interaction: Interaction, tag: str):
         self.reload_entries()
-        allow_nsfw = _channel_allows_nsfw(interaction.channel)
+        allow_nsfw = _channel_allows_nsfw(interaction.channel) and self._config_allows_nsfw()
         eligible = self._filter_entries(allow_nsfw=allow_nsfw, tag=tag)
         if not eligible:
             if self.entries:
@@ -200,15 +211,17 @@ class Gallery(commands.Cog):
     @app_commands.command(name="gallery_list", description="List gallery entries (first 25).")
     async def gallery_list(self, interaction: Interaction):
         self.reload_entries()
-        if not self.entries:
+        allow_nsfw = _channel_allows_nsfw(interaction.channel) and self._config_allows_nsfw()
+        visible_entries = self._filter_entries(allow_nsfw=allow_nsfw)
+        if not visible_entries:
             await interaction.response.send_message("No gallery entries available yet.", ephemeral=True)
             self._log("list", interaction, decision="blocked:empty", entry=None)
             return
         lines = []
-        for idx, entry in enumerate(self.entries[:25], start=1):
+        for idx, entry in enumerate(visible_entries[:25], start=1):
             media_type = _infer_type(entry)
             lines.append(f"{idx}. {entry.get('title', 'Untitled')} • {media_type} • {_first_tag(entry)}")
-        if len(self.entries) > 25:
+        if len(visible_entries) > 25:
             lines.append("")
             lines.append("Showing first 25. Use `/gallery_tag <tag>` to drill down.")
         message = "\n".join(lines)
@@ -250,6 +263,21 @@ class Gallery(commands.Cog):
             decision = "duplicate"
         await interaction.response.send_message(message, ephemeral=True)
         self._log("seed", interaction, decision=decision, entry=stored)
+
+    def _load_config(self) -> dict[str, Any]:
+        try:
+            raw = CONFIG_FILE.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                merged = dict(CONFIG_DEFAULTS)
+                merged.update(data)
+                return merged
+        except Exception:
+            pass
+        return dict(CONFIG_DEFAULTS)
+
+    def _config_allows_nsfw(self) -> bool:
+        return bool(self.config.get("allow_nsfw"))
 
 
 async def setup(bot: commands.Bot):
