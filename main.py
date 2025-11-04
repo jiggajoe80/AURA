@@ -7,6 +7,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
+from cogs.gallery import setup as setup_gallery
+from cogs.gallery_import import setup as setup_gallery_import
 
 # ───────── CONFIG ─────────
 load_dotenv()
@@ -32,7 +34,6 @@ INITIAL_EXTENSIONS = [
     "cogs.emoji",
     "cogs.emoji_ids",
     "cogs.emoji_diag",
-    "cogs.gallery",
     "cogs.gallery_diag",
 ]
 
@@ -151,6 +152,16 @@ class AuraBot(commands.Bot):
         self.autopost_state: dict = _load_autopost_state()
 
     async def setup_hook(self):
+        try:
+            await setup_gallery(self)
+            logger.info("Loaded extension: cogs.gallery")
+        except Exception as e:
+            logger.exception(f"Failed to load cogs.gallery: {e}")
+        try:
+            await setup_gallery_import(self)
+            logger.info("Loaded extension: cogs.gallery_import")
+        except Exception as e:
+            logger.exception(f"Failed to load cogs.gallery_import: {e}")
         for ext in INITIAL_EXTENSIONS:
             try:
                 await self.load_extension(ext)

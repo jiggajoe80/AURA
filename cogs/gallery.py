@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
-from utils.gallery_store import read_gallery, write_gallery, merge_entries  # noqa: F401
+from utils.gallery_store import read_gallery, merge_entries
 
 EMBED_COLOR = 0x355E3B
 IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "gif"}
@@ -222,6 +222,34 @@ class Gallery(commands.Cog):
             f"Reloaded {len(self.entries)} entrie(s).",
             ephemeral=True,
         )
+
+    @app_commands.command(name="gallery_seed", description="Seed one URL into the gallery.")
+    @app_commands.describe(url="Direct media or Discord URL", tag="Optional tag label")
+    async def gallery_seed(self, interaction: Interaction, url: str, tag: Optional[str] = None):
+        self.reload_entries()
+        entry_url = url.strip()
+        entry_type = (
+            "video"
+            if any(host in entry_url for host in ("youtube.com", "youtu.be/"))
+            else _infer_type({"url": entry_url})
+        )
+        entry = {
+            "url": entry_url,
+            "type": entry_type,
+            "tags": [tag] if tag else [],
+            "nsfw": False,
+        }
+        added = merge_entries([entry])
+        self.reload_entries()
+        stored = next((e for e in self.entries if e.get("url") == entry["url"]), entry)
+        if added:
+            message = f"Added 1 item. Total now: {len(self.entries)}."
+            decision = "added"
+        else:
+            message = "Already present. Nothing added."
+            decision = "duplicate"
+        await interaction.response.send_message(message, ephemeral=True)
+        self._log("seed", interaction, decision=decision, entry=stored)
 
 
 async def setup(bot: commands.Bot):
