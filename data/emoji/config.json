@@ -3,9 +3,9 @@
 
   "1270856120377802793": {
     "enabled": false,
-    "rate_channel_seconds": 300,
-    "rate_user_seconds": 90,
-    "prob_user_message": 0.06,
+    "rate_channel_seconds": 120,
+    "rate_user_seconds": 30,
+    "prob_user_message": 0.30,
     "event_window_hours": 6,
     "react_to_bots": false,
     "channels_allow": ["1399840085536407602"],
