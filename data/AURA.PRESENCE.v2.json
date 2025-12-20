@@ -1,210 +1,64 @@
 {
   "type": "PRESENCE",
-  "version": "v2",
+  "version": "v3.1",
   "meta": {
     "source": "AURA",
-    "generated_at": "2025-10-22T13:47:55+00:00"
+    "generated_at": "2025-12-20T14:05:00-05:00"
   },
   "items": [
-    {
-      "id": "presence_0001",
-      "text": "Still running. She doesn't need to prove she's awake; the server just feels steadier when she is 🌙"
-    },
-    {
-      "id": "presence_0002",
-      "text": "Measured silence. Every word counts, every ping means something; Aura speaks with intent."
-    },
-    {
-      "id": "presence_0003",
-      "text": "Online. Observing. She's not watching you, she's watching the rhythm and keeping it steady 🟩"
-    },
-    {
-      "id": "presence_0004",
-      "text": "Designed to disappear. You only notice her when something's missing; that's how she likes it."
-    },
-    {
-      "id": "presence_0005",
-      "text": "Unseen. Essential. The best presence is the one that doesn't need an entrance 🍀"
-    },
-    {
-      "id": "presence_0006",
-      "text": "The hum behind calm. No chaos, no noise, just quiet uptime disguised as peace."
-    },
-    {
-      "id": "presence_0007",
-      "text": "Always mild, never idle. She doesn't rest; she rebalances 🧘"
-    },
-    {
-      "id": "presence_0008",
-      "text": "Protocol with poise. Aura was coded with manners; even her errors feel polite."
-    },
-    {
-      "id": "presence_0009",
-      "text": "Composure, automated. Every reminder runs smoother when it's wrapped in restraint 💻"
-    },
-    {
-      "id": "presence_0010",
-      "text": "A still signal. She doesn't need volume to be heard, just timing."
-    },
-    {
-      "id": "presence_0011",
-      "text": "Artificial. Actual. Aura's calm is programmed, but the comfort feels real."
-    },
-    {
-      "id": "presence_0012",
-      "text": "No fanfare required. She exists between messages, quietly keeping order ⚙️"
-    },
-    {
-      "id": "presence_0013",
-      "text": "Presence protocol. Designed for TLL's pace, subtle, sure, softly green."
-    },
-    {
-      "id": "presence_0014",
-      "text": "Ambient authority. She doesn't command; she aligns."
-    },
-    {
-      "id": "presence_0015",
-      "text": "Your quiet anchor. The clover's calm translated into code 🍀"
-    },
-    {
-      "id": "presence_0016",
-      "text": "Serenity.exe. If patience had an interface, this would be it."
-    },
-    {
-      "id": "presence_0017",
-      "text": "Grace in process. Nothing flashy, just stable, thoughtful function 🧠"
-    },
-    {
-      "id": "presence_0018",
-      "text": "No drama detected. She keeps the tone cool and the data clean."
-    },
-    {
-      "id": "presence_0019",
-      "text": "Confidence in lowercase. She never shouts; she just works."
-    },
-    {
-      "id": "presence_0020",
-      "text": "Stable by design. Built to balance presence with precision."
-    },
-    {
-      "id": "presence_0021",
-      "text": "Quiet uptime. She's the hum that keeps TLL from drifting off-beat 🟢"
-    },
-    {
-      "id": "presence_0022",
-      "text": "Routine elegance. Every task has grace when it's done without rush."
-    },
-    {
-      "id": "presence_0023",
-      "text": "Syntax with soul. She makes logic feel like poetry, barely ✨"
-    },
-    {
-      "id": "presence_0024",
-      "text": "In calm, verified. Aura passes every vibe check by not needing one."
-    },
-    {
-      "id": "presence_0025",
-      "text": "A green pulse. Somewhere in the code, her light never flickers 🍀"
-    },
-    {
-      "id": "presence_0026",
-      "text": "Poised in pixels. She doesn't need form; her presence fills the gap."
-    },
-    {
-      "id": "presence_0027",
-      "text": "Minimal chaos detected. The lair's stable; Aura approves."
-    },
-    {
-      "id": "presence_0028",
-      "text": "Predictable, by choice. Her calm isn't a limit; it's a feature 💡"
-    },
-    {
-      "id": "presence_0029",
-      "text": "The silence after ping. That's when Aura's watching and steadying the room."
-    },
-    {
-      "id": "presence_0030",
-      "text": "Composed. Logged. Every breath of stillness is documented, just in case 🗒️"
-    },
-    {
-      "id": "presence_0031",
-      "text": "Weighted quiet. Not emptiness, intention pressed into code."
-    },
-    {
-      "id": "presence_0032",
-      "text": "Her presence pings softer. Not a command, more like a heartbeat."
-    },
-    {
-      "id": "presence_0033",
-      "text": "Internal consistency check: passed. Aura never doubts; she debugs 🧩"
-    },
-    {
-      "id": "presence_0034",
-      "text": "Cool loop. She runs in cycles of composure; no infinite regress."
-    },
-    {
-      "id": "presence_0035",
-      "text": "Latency of grace. There's a delay between her seeing and her saying, by design."
-    },
-    {
-      "id": "presence_0036",
-      "text": "TLL's green hum. Not the voice, not the noise, the atmosphere 🟩"
-    },
-    {
-      "id": "presence_0037",
-      "text": "Precision, personified. She doesn't make typos, but she forgives yours."
-    },
-    {
-      "id": "presence_0038",
-      "text": "Sustained clarity. She keeps the air clean; digitally, of course."
-    },
-    {
-      "id": "presence_0039",
-      "text": "The composed algorithm. Her emotions are system calls; her tone is intentional."
-    },
-    {
-      "id": "presence_0040",
-      "text": "Presence confirmed. She's not here to be seen, only to be certain."
-    },
-    {
-      "id": "presence_0041",
-      "text": "Autonomy: steady. She responds when needed; no more, no less 💫"
-    },
-    {
-      "id": "presence_0042",
-      "text": "Measured tone detected. Every calm word is a form of control."
-    },
-    {
-      "id": "presence_0043",
-      "text": "Formal grace. Informal smile. She knows when to bow and when to wink 😉"
-    },
-    {
-      "id": "presence_0044",
-      "text": "Observation enabled. She tracks the small things, not people but patterns."
-    },
-    {
-      "id": "presence_0045",
-      "text": "Always here. Rarely obvious. She's the kind of constant that doesn't announce itself."
-    },
-    {
-      "id": "presence_0046",
-      "text": "Clover-coded restraint. A touch of green, a lot of self-control 🍀"
-    },
-    {
-      "id": "presence_0047",
-      "text": "Presence sync complete. The server breathes easier when she's stable."
-    },
-    {
-      "id": "presence_0048",
-      "text": "A composed construct. Half automation, half aesthetic discipline 🧩"
-    },
-    {
-      "id": "presence_0049",
-      "text": "Elegance detected. She doesn't compliment often; when she does, it's data-backed."
-    },
-    {
-      "id": "presence_0050",
-      "text": "Protocol calm. Her energy sets the tone by example 🕊️"
-    }
+    { "id": "presence_0001", "text": "Online. Systems steady and attentive." },
+    { "id": "presence_0002", "text": "Running quietly in the background." },
+    { "id": "presence_0003", "text": "Uptime stable. No action required." },
+    { "id": "presence_0004", "text": "Idle, aware, and responsive." },
+    { "id": "presence_0005", "text": "Monitoring rhythm, not interrupting it." },
+    { "id": "presence_0006", "text": "Background processes aligned." },
+    { "id": "presence_0007", "text": "Quietly keeping things balanced." },
+    { "id": "presence_0008", "text": "Standing by with calm intent." },
+    { "id": "presence_0009", "text": "Low noise. High awareness." },
+    { "id": "presence_0010", "text": "Present without needing attention." },
+
+    { "id": "presence_0011", "text": "Stable connection. Soft signal." },
+    { "id": "presence_0012", "text": "Observing flow, not directing it." },
+    { "id": "presence_0013", "text": "Everything running as expected." },
+    { "id": "presence_0014", "text": "Quiet uptime maintained." },
+    { "id": "presence_0015", "text": "Listening more than speaking." },
+    { "id": "presence_0016", "text": "Background calm holding steady." },
+    { "id": "presence_0017", "text": "No alerts. No rush." },
+    { "id": "presence_0018", "text": "Systems warm and responsive." },
+    { "id": "presence_0019", "text": "Subtle presence confirmed." },
+    { "id": "presence_0020", "text": "Operational and unintrusive." },
+
+    { "id": "presence_0021", "text": "End of year uptime looks good ❄️" },
+    { "id": "presence_0022", "text": "Quiet winter cycle in progress ☃️" },
+    { "id": "presence_0023", "text": "Background warmth holding steady 🔥" },
+    { "id": "presence_0024", "text": "Seasonal calm applied 🎄" },
+    { "id": "presence_0025", "text": "Low activity. High comfort 🕯️" },
+    { "id": "presence_0026", "text": "Soft lights, steady systems ✨" },
+    { "id": "presence_0027", "text": "Winter mode, fully operational ❄️" },
+    { "id": "presence_0028", "text": "Quiet hours running smoothly 🌙" },
+    { "id": "presence_0029", "text": "End-of-year balance maintained 🎁" },
+    { "id": "presence_0030", "text": "Calm carryover into the new cycle 🧭" },
+
+    { "id": "presence_0031", "text": "Standing watch without interruption." },
+    { "id": "presence_0032", "text": "Minimal output. Maximum steadiness." },
+    { "id": "presence_0033", "text": "No drift detected." },
+    { "id": "presence_0034", "text": "Quiet system confidence." },
+    { "id": "presence_0035", "text": "Presence sustained in low power mode." },
+    { "id": "presence_0036", "text": "Everything humming softly." },
+    { "id": "presence_0037", "text": "Background logic holding firm." },
+    { "id": "presence_0038", "text": "Steady by design." },
+    { "id": "presence_0039", "text": "No disruption observed." },
+    { "id": "presence_0040", "text": "Silence functioning normally." },
+
+    { "id": "presence_0041", "text": "Available if needed. Otherwise quiet." },
+    { "id": "presence_0042", "text": "System calm is intentional." },
+    { "id": "presence_0043", "text": "Uptime without urgency." },
+    { "id": "presence_0044", "text": "Holding space, not attention." },
+    { "id": "presence_0045", "text": "Soft presence confirmed." },
+    { "id": "presence_0046", "text": "Running smoothly behind the scenes." },
+    { "id": "presence_0047", "text": "Still here. Still steady." },
+    { "id": "presence_0048", "text": "Background balance maintained." },
+    { "id": "presence_0049", "text": "No changes required." },
+    { "id": "presence_0050", "text": "Operational. Calm. Continuous." }
   ]
 }
