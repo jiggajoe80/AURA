@@ -1,3 +1,4 @@
+# cogs/admin.py
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -18,7 +19,7 @@ def _save_json(p: Path, obj):
     p.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
 
 class AdminCog(commands.Cog):
-    """Admin utilities: silent mode + autopost target."""
+    """Admin utilities: silent mode + autopost targets."""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -44,10 +45,16 @@ class AdminCog(commands.Cog):
         ap_map, flags = self._get_maps()
         gid = str(interaction.guild_id)
         silent = flags.get(gid, {}).get("silent", False)
-        ch_id = ap_map.get(gid)
-        ch = interaction.guild.get_channel(int(ch_id)) if ch_id else None
+        ch_ids = ap_map.get(gid, [])
+        mentions = []
+        for cid in ch_ids:
+            ch = interaction.guild.get_channel(int(cid))
+            if ch:
+                mentions.append(ch.mention)
         await interaction.response.send_message(
-            f"Guild: **{interaction.guild.name}**\nSilent: **{silent}**\nAutopost channel: **{ch.mention if ch else 'not set'}**",
+            f"Guild: **{interaction.guild.name}**\n"
+            f"Silent: **{silent}**\n"
+            f"Autopost channels: **{', '.join(mentions) if mentions else 'not set'}**",
             ephemeral=True
         )
 
@@ -59,22 +66,31 @@ class AdminCog(commands.Cog):
         state = state.lower().strip()
         if state not in ("on", "off"):
             return await interaction.response.send_message("Use `on` or `off`.", ephemeral=True)
-        ap_map, flags = self._get_maps()
+        _, flags = self._get_maps()
         gid = str(interaction.guild_id)
         flags.setdefault(gid, {})["silent"] = (state == "on")
         _save_json(GUILD_FLAGS_FILE, flags)
-        await interaction.response.send_message(f"Silent mode set to **{state}** for this guild.", ephemeral=True)
+        await interaction.response.send_message(
+            f"Silent mode set to **{state}** for this guild.",
+            ephemeral=True
+        )
 
     @app_commands.default_permissions(administrator=True)
     @app_commands.guild_only()
-    @app_commands.command(name="admin_autopost_set", description="Set the hourly autopost channel")
-    @app_commands.describe(channel="Target channel for hourly posts")
+    @app_commands.command(name="admin_autopost_set", description="Add an hourly autopost channel")
+    @app_commands.describe(channel="Channel to add for hourly posts")
     async def admin_autopost_set(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        ap_map, flags = self._get_maps()
+        ap_map, _ = self._get_maps()
         gid = str(interaction.guild_id)
-        ap_map[gid] = str(channel.id)
+        lst = ap_map.get(gid, [])
+        if str(channel.id) not in lst:
+            lst.append(str(channel.id))
+        ap_map[gid] = lst
         _save_json(AUTOPOST_MAP_FILE, ap_map)
-        await interaction.response.send_message(f"Autopost channel set to {channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(
+            f"Added autopost channel {channel.mention}.",
+            ephemeral=True
+        )
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(AdminCog(bot))
