@@ -3,7 +3,6 @@ from discord import app_commands
 from discord.ext import commands
 import json
 from pathlib import Path
-from typing import List
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
@@ -34,7 +33,11 @@ class AdminCog(commands.Cog):
     @app_commands.command(name="admin", description="Admin controls for Aura")
     async def admin(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "Use subcommands: `/admin silent on|off`, `/admin autopost set`, `/admin status`",
+            "Use subcommands: "
+            "`/admin_silent on|off`, "
+            "`/admin_autopost_set #channel`, "
+            "`/admin_autopost_clear`, "
+            "`/admin_status`",
             ephemeral=True
         )
 
@@ -44,13 +47,16 @@ class AdminCog(commands.Cog):
     async def admin_status(self, interaction: discord.Interaction):
         ap_map, flags = self._get_maps()
         gid = str(interaction.guild_id)
+
         silent = flags.get(gid, {}).get("silent", False)
         ch_ids = ap_map.get(gid, [])
+
         mentions = []
         for cid in ch_ids:
             ch = interaction.guild.get_channel(int(cid))
             if ch:
                 mentions.append(ch.mention)
+
         await interaction.response.send_message(
             f"Guild: **{interaction.guild.name}**\n"
             f"Silent: **{silent}**\n"
@@ -60,10 +66,7 @@ class AdminCog(commands.Cog):
 
     @app_commands.default_permissions(administrator=True)
     @app_commands.guild_only()
-    @app_commands.command(
-        name="admin_silent",
-        description="Toggle silent mode for this guild"
-    )
+    @app_commands.command(name="admin_silent", description="Toggle silent mode for this guild")
     @app_commands.describe(state="on or off")
     async def admin_silent(self, interaction: discord.Interaction, state: str):
         state = state.lower().strip()
@@ -73,6 +76,7 @@ class AdminCog(commands.Cog):
 
         _, flags = self._get_maps()
         gid = str(interaction.guild_id)
+
         flags.setdefault(gid, {})["silent"] = (state == "on")
         _save_json(GUILD_FLAGS_FILE, flags)
 
@@ -85,32 +89,45 @@ class AdminCog(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(
         name="admin_autopost_set",
-        description="Set one or more hourly autopost channels"
+        description="Add a channel to the hourly autopost list"
     )
-    @app_commands.describe(
-        channels="Select one or more channels for hourly autoposts"
-    )
+    @app_commands.describe(channel="Channel to add for hourly autoposts")
     async def admin_autopost_set(
         self,
         interaction: discord.Interaction,
-        channels: List[discord.TextChannel],
+        channel: discord.TextChannel,
     ):
         ap_map, _ = self._get_maps()
         gid = str(interaction.guild_id)
 
-        unique_ids = []
-        for ch in channels:
-            cid = str(ch.id)
-            if cid not in unique_ids:
-                unique_ids.append(cid)
+        lst = ap_map.get(gid, [])
+        cid = str(channel.id)
 
-        ap_map[gid] = unique_ids
+        if cid not in lst:
+            lst.append(cid)
+            ap_map[gid] = lst
+            _save_json(AUTOPOST_MAP_FILE, ap_map)
+            msg = f"Added autopost channel {channel.mention}."
+        else:
+            msg = f"{channel.mention} is already in the autopost list."
+
+        await interaction.response.send_message(msg, ephemeral=True)
+
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.guild_only()
+    @app_commands.command(
+        name="admin_autopost_clear",
+        description="Clear all hourly autopost channels for this guild"
+    )
+    async def admin_autopost_clear(self, interaction: discord.Interaction):
+        ap_map, _ = self._get_maps()
+        gid = str(interaction.guild_id)
+
+        ap_map[gid] = []
         _save_json(AUTOPOST_MAP_FILE, ap_map)
 
-        mentions = ", ".join(ch.mention for ch in channels)
-
         await interaction.response.send_message(
-            f"Autopost channels set to: {mentions}",
+            "All autopost channels cleared.",
             ephemeral=True
         )
 
