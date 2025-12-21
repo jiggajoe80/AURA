@@ -93,10 +93,7 @@ class AdminCog(commands.Cog):
     async def admin_autopost_set(
         self,
         interaction: discord.Interaction,
-        channels: app_commands.Transform[
-            List[discord.TextChannel],
-            app_commands.ChannelTransformer
-        ],
+        channels: List[discord.TextChannel],
     ):
         ap_map, _ = self._get_maps()
         gid = str(interaction.guild_id)
