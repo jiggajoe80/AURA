@@ -36,8 +36,7 @@ GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
 REMINDERS_FILE = "reminders.json"
 
 # ────────────── AUTPOST TIMING ──────────────
-POST_INTERVAL_SECONDS = 90 * 60   # 90 minutes
-QUIET_SECONDS = 30 * 60           # 30 minutes
+QUIET_SECONDS = 97 * 60  # 97 minutes
 
 # ────────────── HELPERS ──────────────
 def _load_json(p: Path, default):
@@ -51,7 +50,7 @@ def _load_items_from_json(filename: str):
     try:
         obj = json.loads(fp.read_text(encoding="utf-8"))
         if isinstance(obj, dict) and "items" in obj:
-            return [it["text"] for it in obj["items"] if isinstance(it, dict)]
+            return [it.get("text", "") for it in obj["items"] if isinstance(it, dict)]
         if isinstance(obj, list):
             return [str(x.get("text", x)) if isinstance(x, dict) else str(x) for x in obj]
     except Exception as e:
@@ -62,13 +61,22 @@ def load_lines_or_default(file, fallback):
     lines = _load_items_from_json(file)
     return lines if lines else fallback
 
+def _strip_spoiler_wrappers(s: str) -> str:
+    s = (s or "").strip()
+    if len(s) >= 4 and s.startswith("||") and s.endswith("||"):
+        return s[2:-2].strip()
+    return s
+
 def split_joke(line: str):
+    line = str(line)
     parts = line.split("||", 1)
-    return parts[0].strip(), parts[1].strip() if len(parts) == 2 else ""
+    q = _strip_spoiler_wrappers(parts[0].strip())
+    a = _strip_spoiler_wrappers(parts[1].strip()) if len(parts) == 2 else ""
+    return q, a
 
 def format_joke(line: str):
     q, a = split_joke(line)
-    return f"**Q:** {q} →\n**A:** ||{a}||" if a else q
+    return f"**Q:** {q}\n**A:** {a}" if a else q
 
 # ────────────── KEEP ALIVE ──────────────
 app = Flask("")
@@ -97,7 +105,7 @@ class AuraBot(commands.Bot):
         self.jokes_pool = []
 
         self.last_channel_activity = {}
-        self.last_hourly_post = None
+        self.last_post_per_channel = {}
 
         self.rotation_index = 0
         self.last_reset_date = None
@@ -154,8 +162,8 @@ async def on_ready():
     now = datetime.utcnow()
     bot.booted_at = now
     bot.rotation_index = 0
-    bot.last_hourly_post = now
     bot.guild_silent_state = {}
+    bot.last_post_per_channel = {}
 
     if not autopost_loop.is_running():
         autopost_loop.start()
@@ -164,22 +172,20 @@ async def on_ready():
 async def on_message(message):
     if message.author.bot:
         return
+
     if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
         cid = message.channel.id if isinstance(message.channel, discord.TextChannel) else message.channel.parent_id
         if cid:
             bot.last_channel_activity[cid] = datetime.utcnow()
+
     await bot.process_commands(message)
 
 # ────────────── AUTPOST LOOP ──────────────
 @tasks.loop(minutes=1)
 async def autopost_loop():
-    now = datetime.utcnow()
-
-    if bot.last_hourly_post and (now - bot.last_hourly_post).total_seconds() < POST_INTERVAL_SECONDS:
-        return
-
     ap_map = _load_json(AUTOPOST_MAP_FILE, {})
     flags = _load_json(GUILD_FLAGS_FILE, {})
+    now = datetime.utcnow()
 
     posted_any = False
 
@@ -187,44 +193,54 @@ async def autopost_loop():
         gid = str(guild.id)
         silent_now = bool(flags.get(gid, {}).get("silent", False))
         silent_prev = bot.guild_silent_state.get(gid, None)
-
         bot.guild_silent_state[gid] = silent_now
-
-        if silent_prev is True and silent_now is False:
-            bot.last_hourly_post = now
-            return
 
         if silent_now:
             continue
 
         channel_ids = ap_map.get(gid, [])
-        if not channel_ids:
-            continue
-
-        channel_ids = list(channel_ids)
+        if channel_ids is None:
+            channel_ids = []
+        elif isinstance(channel_ids, str):
+            channel_ids = [channel_ids]
+        elif not isinstance(channel_ids, list):
+            channel_ids = []
 
         for i, cid in enumerate(channel_ids):
-            channel = bot.get_channel(int(cid))
+            try:
+                cid_int = int(cid)
+            except Exception:
+                continue
+
+            channel = bot.get_channel(cid_int)
             if not channel:
                 continue
 
-            last_activity = bot.last_channel_activity.get(int(cid))
-            if last_activity and (now - last_activity).total_seconds() < QUIET_SECONDS:
+            last_human = bot.last_channel_activity.get(cid_int)
+            if last_human and (now - last_human).total_seconds() < QUIET_SECONDS:
+                continue
+
+            last_post = bot.last_post_per_channel.get(cid_int)
+            if last_post and (now - last_post).total_seconds() < QUIET_SECONDS:
                 continue
 
             assign_index = (i + bot.rotation_index) % 2
+
             try:
                 if assign_index == 0:
                     await channel.send(bot.next_joke())
                 else:
                     await channel.send(bot.next_hourly())
+                bot.last_post_per_channel[cid_int] = now
                 posted_any = True
             except Exception:
                 continue
 
+        if silent_prev is True and silent_now is False:
+            bot.last_post_per_channel = {}
+
     if posted_any:
         bot.rotation_index += 1
-        bot.last_hourly_post = now
 
 # ────────────── ENTRY ──────────────
 if __name__ == "__main__":
