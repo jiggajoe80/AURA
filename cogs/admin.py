@@ -49,7 +49,16 @@ class AdminCog(commands.Cog):
         gid = str(interaction.guild_id)
 
         silent = flags.get(gid, {}).get("silent", False)
-        ch_ids = ap_map.get(gid, [])
+        raw = ap_map.get(gid)
+
+        if raw is None:
+            ch_ids = []
+        elif isinstance(raw, str):
+            ch_ids = [raw]
+        elif isinstance(raw, list):
+            ch_ids = raw
+        else:
+            ch_ids = []
 
         mentions = []
         for cid in ch_ids:
@@ -100,7 +109,17 @@ class AdminCog(commands.Cog):
         ap_map, _ = self._get_maps()
         gid = str(interaction.guild_id)
 
-        lst = ap_map.get(gid, [])
+        raw = ap_map.get(gid)
+
+        if raw is None:
+            lst = []
+        elif isinstance(raw, str):
+            lst = [raw]
+        elif isinstance(raw, list):
+            lst = raw
+        else:
+            lst = []
+
         cid = str(channel.id)
 
         if cid not in lst:
