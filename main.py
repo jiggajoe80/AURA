@@ -35,6 +35,10 @@ GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
 
 REMINDERS_FILE = "reminders.json"
 
+# ────────────── AUTPOST TIMING ──────────────
+POST_INTERVAL_SECONDS = 90 * 60   # 90 minutes
+QUIET_SECONDS = 30 * 60           # 30 minutes
+
 # ────────────── HELPERS ──────────────
 def _load_json(p: Path, default):
     try:
@@ -95,9 +99,11 @@ class AuraBot(commands.Bot):
         self.last_channel_activity = {}
         self.last_hourly_post = None
 
-        self.autopost_enabled = False
         self.rotation_index = 0
         self.last_reset_date = None
+
+        self.guild_silent_state = {}
+        self.booted_at = None
 
     async def setup_hook(self):
         for ext in INITIAL_EXTENSIONS:
@@ -144,9 +150,12 @@ async def on_ready():
             name=random.choice(bot.presence_pool)
         )
     )
-    bot.autopost_enabled = False
+
+    now = datetime.utcnow()
+    bot.booted_at = now
     bot.rotation_index = 0
-    bot.last_hourly_post = None
+    bot.last_hourly_post = now
+    bot.guild_silent_state = {}
 
     if not autopost_loop.is_running():
         autopost_loop.start()
@@ -164,16 +173,28 @@ async def on_message(message):
 # ────────────── AUTPOST LOOP ──────────────
 @tasks.loop(minutes=1)
 async def autopost_loop():
-    if not bot.autopost_enabled:
+    now = datetime.utcnow()
+
+    if bot.last_hourly_post and (now - bot.last_hourly_post).total_seconds() < POST_INTERVAL_SECONDS:
         return
 
     ap_map = _load_json(AUTOPOST_MAP_FILE, {})
     flags = _load_json(GUILD_FLAGS_FILE, {})
-    now = datetime.utcnow()
+
+    posted_any = False
 
     for guild in bot.guilds:
         gid = str(guild.id)
-        if flags.get(gid, {}).get("silent", False):
+        silent_now = bool(flags.get(gid, {}).get("silent", False))
+        silent_prev = bot.guild_silent_state.get(gid, None)
+
+        bot.guild_silent_state[gid] = silent_now
+
+        if silent_prev is True and silent_now is False:
+            bot.last_hourly_post = now
+            return
+
+        if silent_now:
             continue
 
         channel_ids = ap_map.get(gid, [])
@@ -181,7 +202,6 @@ async def autopost_loop():
             continue
 
         channel_ids = list(channel_ids)
-        posted_any = False
 
         for i, cid in enumerate(channel_ids):
             channel = bot.get_channel(int(cid))
@@ -189,7 +209,7 @@ async def autopost_loop():
                 continue
 
             last_activity = bot.last_channel_activity.get(int(cid))
-            if last_activity and (now - last_activity).total_seconds() < 1800:
+            if last_activity and (now - last_activity).total_seconds() < QUIET_SECONDS:
                 continue
 
             assign_index = (i + bot.rotation_index) % 2
@@ -202,9 +222,9 @@ async def autopost_loop():
             except Exception:
                 continue
 
-        if posted_any:
-            bot.rotation_index += 1
-            bot.last_hourly_post = now
+    if posted_any:
+        bot.rotation_index += 1
+        bot.last_hourly_post = now
 
 # ────────────── ENTRY ──────────────
 if __name__ == "__main__":
