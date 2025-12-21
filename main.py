@@ -1,9 +1,8 @@
-# main.py
 import discord
 from discord import app_commands
 from discord.ext import tasks, commands
-import os, json, random, asyncio, logging
-from datetime import datetime, timedelta, timezone
+import os, json, random, logging
+from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask
@@ -35,7 +34,6 @@ JOKES_FILE = "jokes.json"
 AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
 GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
 
-LOG_CHANNEL_ID = 1427716795615285329
 REMINDERS_FILE = "reminders.json"
 
 # ────────────── HELPERS ──────────────
@@ -76,10 +74,12 @@ def _format_joke(line: str) -> str:
 app = Flask("")
 
 @app.route("/")
-def home(): return "Aura is awake ☘️"
+def home():
+    return "Aura is awake ☘️"
 
 @app.route("/health")
-def health(): return "ok", 200
+def health():
+    return "ok", 200
 
 def _run():
     port = int(os.environ.get("PORT", 8000))
@@ -109,34 +109,29 @@ class AuraBot(commands.Bot):
         self.last_channel_activity = {}
         self.last_hourly_post = None
 
-        # HARD BOOT GUARANTEE
         self.autopost_enabled = False
-        self.autopost_channel_id = None
-
-        self.cooldowns = {}
 
     async def setup_hook(self):
         for ext in INITIAL_EXTENSIONS:
             await self.load_extension(ext)
         await self.tree.sync()
 
-    # ───── JSON LOADERS ─────
     def reset_daily_pools(self):
-        now_utc = datetime.utcnow().date()
-        if self.last_reset_date != now_utc:
+        today = datetime.utcnow().date()
+        if self.last_reset_date != today:
             self.used_presence_today = []
             self.used_hourly_today = []
             self.used_jokes_today = []
 
             self.presence_pool = PRESENCE_LINES.copy()
-            self.hourly_pool   = HOURLY_LINES.copy()
-            self.jokes_pool    = JOKES_LINES.copy()
+            self.hourly_pool = HOURLY_LINES.copy()
+            self.jokes_pool = JOKES_LINES.copy()
 
             random.shuffle(self.presence_pool)
             random.shuffle(self.hourly_pool)
             random.shuffle(self.jokes_pool)
 
-            self.last_reset_date = now_utc
+            self.last_reset_date = today
 
     def get_next_presence(self) -> str:
         self.reset_daily_pools()
@@ -194,39 +189,71 @@ async def on_ready():
     bot.reset_daily_pools()
 
     presence_text = bot.get_next_presence()
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.watching,
-        name=presence_text
-    ))
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name=presence_text
+        )
+    )
 
-    # DO NOT ENABLE AUTPOST ON BOOT
     bot.autopost_enabled = False
-    bot.autopost_channel_id = None
     bot.last_hourly_post = None
     bot._hourly_flip = False
 
     if not check_hourly_post.is_running():
         check_hourly_post.start()
 
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
+        cid = message.channel.id if isinstance(message.channel, discord.TextChannel) else message.channel.parent_id
+        if cid:
+            bot.last_channel_activity[cid] = datetime.utcnow()
+    await bot.process_commands(message)
+
 @tasks.loop(minutes=1)
 async def check_hourly_post():
     if not bot.autopost_enabled:
         return
 
+    ap_map = _load_json(AUTOPOST_MAP_FILE, {})
+    flags = _load_json(GUILD_FLAGS_FILE, {})
+
     now = datetime.utcnow()
-    channel = bot.get_channel(bot.autopost_channel_id)
-    if not channel:
-        return
 
-    last_activity = bot.last_channel_activity.get(bot.autopost_channel_id)
-    inactive_seconds = (now - last_activity).total_seconds() if last_activity else float("inf")
-    since_last = (now - bot.last_hourly_post).total_seconds() if bot.last_hourly_post else float("inf")
+    for guild in bot.guilds:
+        gid = str(guild.id)
 
-    if inactive_seconds >= 1800 and since_last >= 3600:
-        bot._hourly_flip = not bot._hourly_flip
-        message = bot.get_next_joke() if bot._hourly_flip else bot.get_next_hourly()
-        await channel.send(message)
-        bot.last_hourly_post = now
+        if flags.get(gid, {}).get("silent", False):
+            continue
+
+        channel_ids = ap_map.get(gid, [])
+        if not channel_ids:
+            continue
+
+        for cid in channel_ids:
+            channel = bot.get_channel(int(cid))
+            if not channel:
+                continue
+
+            last_activity = bot.last_channel_activity.get(int(cid))
+            inactive_seconds = (now - last_activity).total_seconds() if last_activity else float("inf")
+            since_last = (now - bot.last_hourly_post).total_seconds() if bot.last_hourly_post else float("inf")
+
+            if inactive_seconds < 1800 or since_last < 3600:
+                continue
+
+            bot._hourly_flip = not bot._hourly_flip
+            message = bot.get_next_joke() if bot._hourly_flip else bot.get_next_hourly()
+
+            try:
+                await channel.send(message)
+            except Exception:
+                continue
+
+            bot.last_hourly_post = now
 
 # ────────────── ENTRY ──────────────
 if __name__ == "__main__":
