@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 
+# ────────────── CONFIG ──────────────
 load_dotenv()
 
 logging.basicConfig(
@@ -27,6 +28,7 @@ INITIAL_EXTENSIONS = [
     "cogs.say",
     "cogs.timezones",
     "cogs.flip",
+    "cogs.profile",
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -36,8 +38,9 @@ HOURLIES_FILE = "AURA.HOURLIES.v2.json"
 AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
 GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
 
-QUIET_SECONDS = 97 * 60
+QUIET_SECONDS = 97 * 60  # 97 minutes
 
+# ────────────── HELPERS ──────────────
 def _load_json(p: Path, default):
     try:
         return json.loads(p.read_text(encoding="utf-8"))
@@ -60,6 +63,7 @@ def load_lines_or_default(file, fallback):
     lines = _load_items_from_json(file)
     return lines if lines else fallback
 
+# ────────────── KEEP ALIVE ──────────────
 app = Flask("")
 
 @app.route("/")
@@ -72,6 +76,7 @@ def run_web():
 def keep_alive():
     Thread(target=run_web, daemon=True).start()
 
+# ────────────── BOT ──────────────
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -106,6 +111,7 @@ class AuraBot(commands.Bot):
 
 bot = AuraBot()
 
+# ────────────── LOAD DATA ──────────────
 bot.presence_pool = load_lines_or_default(
     PRESENCE_FILE,
     ["quiet, steady, present"]
@@ -115,6 +121,7 @@ bot.hourly_pool = load_lines_or_default(
     ["🍀 Clover check-in"]
 )
 
+# ────────────── EVENTS ──────────────
 @bot.event
 async def on_ready():
     await bot.change_presence(
@@ -123,6 +130,8 @@ async def on_ready():
             name=random.choice(bot.presence_pool)
         )
     )
+
+    # ensure slash commands are registered
     await bot.tree.sync()
 
     bot.booted_at = datetime.utcnow()
@@ -149,6 +158,7 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+# ────────────── AUTPOST LOOP ──────────────
 @tasks.loop(minutes=1)
 async def autopost_loop():
     ap_map = _load_json(AUTOPOST_MAP_FILE, {})
@@ -162,6 +172,7 @@ async def autopost_loop():
         silent_now = bool(flags.get(gid, {}).get("silent", False))
         silent_prev = bot.guild_silent_state.get(gid, None)
         bot.guild_silent_state[gid] = silent_now
+
         if silent_now:
             continue
 
@@ -210,6 +221,7 @@ async def autopost_loop():
     if posted_any:
         bot.rotation_index += 1
 
+# ────────────── ENTRY ──────────────
 if __name__ == "__main__":
     keep_alive()
     bot.run(os.getenv("DISCORD_TOKEN"))
