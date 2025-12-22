@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 
-# ────────────── CONFIG ──────────────
 load_dotenv()
 
 logging.basicConfig(
@@ -26,7 +25,8 @@ INITIAL_EXTENSIONS = [
     "cogs.events",
     "cogs.fortunes",
     "cogs.say",
-    "cogs.timezones",   # <-- REGISTER /time COMMAND
+    "cogs.timezones",
+    "cogs.flip",
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -36,7 +36,7 @@ HOURLIES_FILE = "AURA.HOURLIES.v2.json"
 AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
 GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
 
-QUIET_SECONDS = 97 * 60  # 97 minutes
+QUIET_SECONDS = 97 * 60
 
 def _load_json(p: Path, default):
     try:
@@ -60,7 +60,6 @@ def load_lines_or_default(file, fallback):
     lines = _load_items_from_json(file)
     return lines if lines else fallback
 
-# ────────────── KEEP ALIVE ──────────────
 app = Flask("")
 
 @app.route("/")
@@ -73,7 +72,6 @@ def run_web():
 def keep_alive():
     Thread(target=run_web, daemon=True).start()
 
-# ────────────── BOT ──────────────
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -125,12 +123,9 @@ async def on_ready():
             name=random.choice(bot.presence_pool)
         )
     )
-
-    # FORCE SLASH COMMAND REGISTRATION
     await bot.tree.sync()
 
-    now = datetime.utcnow()
-    bot.booted_at = now
+    bot.booted_at = datetime.utcnow()
     bot.rotation_index = 0
     bot.guild_silent_state = {}
     bot.last_post_per_channel = {}
