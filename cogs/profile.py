@@ -15,14 +15,14 @@ class ProfileCog(commands.Cog):
     async def profile(self, interaction: discord.Interaction, user: str):
         target = None
 
-        # Try mention resolution
+        # Resolve from mention if present
         if interaction.data and interaction.data.get("resolved", {}).get("users"):
             users = interaction.data["resolved"]["users"]
             if users:
                 uid = next(iter(users.keys()))
                 target = await self.bot.fetch_user(int(uid))
 
-        # Try raw ID
+        # Resolve from raw ID
         if target is None:
             try:
                 target = await self.bot.fetch_user(int(user))
@@ -41,18 +41,23 @@ class ProfileCog(commands.Cog):
                     badges.append(name.replace("_", " ").title())
 
         badge_text = ", ".join(badges) if badges else "None"
-
         created = target.created_at.strftime("%B %d, %Y")
 
         embed = discord.Embed(color=discord.Color.blurple())
-        embed.description = f"{target.mention}\n\n" \
-            f"**🆔 User ID**\n{target.id}\n\n" \
-            f"**👤 Username**\n{target.name}\n\n" \
-            f"**🏷️ Display Name**\n{target.global_name or target.name}\n\n" \
-            f"**📅 Account Created**\n{created}\n\n" \
+        embed.description = (
+            f"{target.mention}\n\n"
+            f"**🆔 User ID**\n{target.id}\n\n"
+            f"**👤 Username**\n{target.name}\n\n"
+            f"**🏷️ Display Name**\n{target.global_name or target.name}\n\n"
+            f"**📅 Account Created**\n{created}\n\n"
             f"**🏅 Badges**\n{badge_text}"
+        )
 
-        embed.set_thumbnail(url=target.display_avatar.url)
+        # subtle divider
+        embed.add_field(name="\u200b", value="—", inline=False)
+
+        # avatar as final visual capstone
+        embed.set_image(url=target.display_avatar.url)
 
         await interaction.response.send_message(embed=embed)
 
