@@ -26,6 +26,7 @@ INITIAL_EXTENSIONS = [
     "cogs.events",
     "cogs.fortunes",
     "cogs.say",
+    "cogs.timezones",   # <-- REGISTER /time COMMAND
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -35,10 +36,8 @@ HOURLIES_FILE = "AURA.HOURLIES.v2.json"
 AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
 GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
 
-# ────────────── AUTPOST TIMING ──────────────
 QUIET_SECONDS = 97 * 60  # 97 minutes
 
-# ────────────── HELPERS ──────────────
 def _load_json(p: Path, default):
     try:
         return json.loads(p.read_text(encoding="utf-8"))
@@ -85,13 +84,10 @@ class AuraBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.presence_pool = []
         self.hourly_pool = []
-
         self.last_channel_activity = {}
         self.last_post_per_channel = {}
-
         self.rotation_index = 0
         self.last_reset_date = None
-
         self.guild_silent_state = {}
         self.booted_at = None
 
@@ -112,7 +108,6 @@ class AuraBot(commands.Bot):
 
 bot = AuraBot()
 
-# ────────────── LOAD DATA ──────────────
 bot.presence_pool = load_lines_or_default(
     PRESENCE_FILE,
     ["quiet, steady, present"]
@@ -122,7 +117,6 @@ bot.hourly_pool = load_lines_or_default(
     ["🍀 Clover check-in"]
 )
 
-# ────────────── EVENTS ──────────────
 @bot.event
 async def on_ready():
     await bot.change_presence(
@@ -131,6 +125,9 @@ async def on_ready():
             name=random.choice(bot.presence_pool)
         )
     )
+
+    # FORCE SLASH COMMAND REGISTRATION
+    await bot.tree.sync()
 
     now = datetime.utcnow()
     bot.booted_at = now
@@ -157,15 +154,12 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# ────────────── AUTPOST LOOP ──────────────
 @tasks.loop(minutes=1)
 async def autopost_loop():
     ap_map = _load_json(AUTOPOST_MAP_FILE, {})
     flags = _load_json(GUILD_FLAGS_FILE, {})
     now = datetime.utcnow()
-
     posted_any = False
-
     jokes_cog = bot.get_cog("JokesCog")
 
     for guild in bot.guilds:
@@ -173,16 +167,13 @@ async def autopost_loop():
         silent_now = bool(flags.get(gid, {}).get("silent", False))
         silent_prev = bot.guild_silent_state.get(gid, None)
         bot.guild_silent_state[gid] = silent_now
-
         if silent_now:
             continue
 
         channel_ids = ap_map.get(gid, [])
-        if channel_ids is None:
-            channel_ids = []
-        elif isinstance(channel_ids, str):
+        if isinstance(channel_ids, str):
             channel_ids = [channel_ids]
-        elif not isinstance(channel_ids, list):
+        if not isinstance(channel_ids, list):
             channel_ids = []
 
         for i, cid in enumerate(channel_ids):
@@ -206,15 +197,10 @@ async def autopost_loop():
             assign_index = (i + bot.rotation_index) % 2
 
             try:
-                if assign_index == 0:
-                    if jokes_cog:
-                        msg = jokes_cog.get_random_joke()
-                        if msg:
-                            await channel.send(msg)
-                        else:
-                            continue
-                    else:
-                        continue
+                if assign_index == 0 and jokes_cog:
+                    msg = jokes_cog.get_random_joke()
+                    if msg:
+                        await channel.send(msg)
                 else:
                     await channel.send(bot.next_hourly())
 
@@ -229,7 +215,6 @@ async def autopost_loop():
     if posted_any:
         bot.rotation_index += 1
 
-# ────────────── ENTRY ──────────────
 if __name__ == "__main__":
     keep_alive()
     bot.run(os.getenv("DISCORD_TOKEN"))
