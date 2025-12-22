@@ -1,3 +1,6 @@
+# =========================
+# FILE: main.py
+# =========================
 import discord
 from discord.ext import tasks, commands
 import os, json, random, logging
@@ -28,12 +31,9 @@ INITIAL_EXTENSIONS = [
 DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = "AURA.PRESENCE.v2.json"
 HOURLIES_FILE = "AURA.HOURLIES.v2.json"
-JOKES_FILE = "jokes.json"
 
 AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
 GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
-
-REMINDERS_FILE = "reminders.json"
 
 # ────────────── AUTPOST TIMING ──────────────
 QUIET_SECONDS = 97 * 60  # 97 minutes
@@ -61,23 +61,6 @@ def load_lines_or_default(file, fallback):
     lines = _load_items_from_json(file)
     return lines if lines else fallback
 
-def _strip_spoiler_wrappers(s: str) -> str:
-    s = (s or "").strip()
-    if len(s) >= 4 and s.startswith("||") and s.endswith("||"):
-        return s[2:-2].strip()
-    return s
-
-def split_joke(line: str):
-    line = str(line)
-    parts = line.split("||", 1)
-    q = _strip_spoiler_wrappers(parts[0].strip())
-    a = _strip_spoiler_wrappers(parts[1].strip()) if len(parts) == 2 else ""
-    return q, a
-
-def format_joke(line: str):
-    q, a = split_joke(line)
-    return f"**Q:** {q}\n**A:** {a}" if a else q
-
 # ────────────── KEEP ALIVE ──────────────
 app = Flask("")
 
@@ -102,7 +85,6 @@ class AuraBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.presence_pool = []
         self.hourly_pool = []
-        self.jokes_pool = []
 
         self.last_channel_activity = {}
         self.last_post_per_channel = {}
@@ -122,16 +104,11 @@ class AuraBot(commands.Bot):
         if self.last_reset_date != today:
             random.shuffle(self.presence_pool)
             random.shuffle(self.hourly_pool)
-            random.shuffle(self.jokes_pool)
             self.last_reset_date = today
 
     def next_hourly(self):
         self.reset_daily()
         return random.choice(self.hourly_pool)
-
-    def next_joke(self):
-        self.reset_daily()
-        return format_joke(random.choice(self.jokes_pool))
 
 bot = AuraBot()
 
@@ -143,10 +120,6 @@ bot.presence_pool = load_lines_or_default(
 bot.hourly_pool = load_lines_or_default(
     HOURLIES_FILE,
     ["🍀 Clover check-in"]
-)
-bot.jokes_pool = load_lines_or_default(
-    JOKES_FILE,
-    ["Why the clover smiled||It felt lucky"]
 )
 
 # ────────────── EVENTS ──────────────
@@ -174,7 +147,11 @@ async def on_message(message):
         return
 
     if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
-        cid = message.channel.id if isinstance(message.channel, discord.TextChannel) else message.channel.parent_id
+        cid = (
+            message.channel.id
+            if isinstance(message.channel, discord.TextChannel)
+            else message.channel.parent_id
+        )
         if cid:
             bot.last_channel_activity[cid] = datetime.utcnow()
 
@@ -188,6 +165,8 @@ async def autopost_loop():
     now = datetime.utcnow()
 
     posted_any = False
+
+    jokes_cog = bot.get_cog("JokesCog")
 
     for guild in bot.guilds:
         gid = str(guild.id)
@@ -228,9 +207,17 @@ async def autopost_loop():
 
             try:
                 if assign_index == 0:
-                    await channel.send(bot.next_joke())
+                    if jokes_cog:
+                        msg = jokes_cog.get_random_joke()
+                        if msg:
+                            await channel.send(msg)
+                        else:
+                            continue
+                    else:
+                        continue
                 else:
                     await channel.send(bot.next_hourly())
+
                 bot.last_post_per_channel[cid_int] = now
                 posted_any = True
             except Exception:
