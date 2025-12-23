@@ -29,6 +29,7 @@ INITIAL_EXTENSIONS = [
     "cogs.timezones",
     "cogs.flip",
     "cogs.profile",
+    "cogs.archive_forward",
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -131,7 +132,6 @@ async def on_ready():
         )
     )
 
-    # ensure slash commands are registered
     await bot.tree.sync()
 
     bot.booted_at = datetime.utcnow()
