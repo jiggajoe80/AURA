@@ -1,60 +1,135 @@
 # =========================
 # FILE: cogs/archive_forward.py
 # =========================
+import asyncio
+import hashlib
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional, Dict, Any, List
+
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-import asyncio
-from datetime import datetime
-from typing import Optional, Dict, Any
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+STATE_FILE = DATA_DIR / "archive_forward_state.json"
 
 MAX_RESUME_ATTEMPTS = 3
-PROGRESS_INTERVAL = 100  # messages
+RESUME_DELAY_SECONDS = 12
+PROGRESS_INTERVAL = 100
+MAX_CONTENT_LEN = 1900
+QUIET_ALLOWED_MENTIONS = discord.AllowedMentions.none()
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _ensure_data_dir():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _load_state() -> Dict[str, Any]:
+    _ensure_data_dir()
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"sources": {}}
+
+
+def _save_state(state: Dict[str, Any]) -> None:
+    _ensure_data_dir()
+    STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _webhook_fingerprint(url: str) -> str:
+    h = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return f"sha256:{h[:10]}"
+
+
+def _is_thread_channel(ch: discord.abc.GuildChannel) -> bool:
+    return isinstance(ch, discord.Thread)
+
+
+def _is_image_attachment(att: discord.Attachment) -> bool:
+    if att.content_type and att.content_type.startswith("image/"):
+        return True
+    name = (att.filename or "").lower()
+    return name.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+
+
+def _sanitize_content(s: Optional[str]) -> str:
+    return (s or "").strip()
+
+
+def _truncate(s: str) -> str:
+    s = s.strip()
+    if len(s) <= MAX_CONTENT_LEN:
+        return s
+    return s[: MAX_CONTENT_LEN - 1].rstrip() + "…"
+
 
 class ArchiveForward(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # local, in-cog state only
-        self._runs: Dict[str, Dict[str, Any]] = {}
+        self._state = _load_state()
 
-    # ---------- helpers ----------
-    async def _log(self, log_channel: discord.TextChannel, msg: str):
-        await log_channel.send(msg)
+    async def _log(self, log_channel: discord.TextChannel, msg: str) -> None:
+        await log_channel.send(msg, allowed_mentions=QUIET_ALLOWED_MENTIONS)
 
-    def _run_key(self, source_id: int, webhook_url: str) -> str:
-        return f"{source_id}:{webhook_url}"
+    def _get_source_state(self, source_id: int) -> Dict[str, Any]:
+        sources = self._state.setdefault("sources", {})
+        return sources.setdefault(str(source_id), {
+            "source_channel_id": str(source_id),
+            "completed": False,
+            "last_message_id": None,
+            "updated_at": None,
+        })
 
-    def _is_image(self, att: discord.Attachment) -> bool:
-        return att.content_type and att.content_type.startswith("image/")
+    def _set_source_state(self, source_id: int, *, completed: Optional[bool] = None, last_message_id: Optional[int] = None) -> None:
+        st = self._get_source_state(source_id)
+        if completed is not None:
+            st["completed"] = bool(completed)
+        if last_message_id is not None:
+            st["last_message_id"] = str(last_message_id)
+        st["updated_at"] = _utc_now_iso()
+        _save_state(self._state)
 
-    def _sanitize_text(self, content: Optional[str]) -> str:
-        return (content or "").strip()
+    async def _eligible_message_count(self, source: discord.TextChannel) -> int:
+        count = 0
+        async for msg in source.history(oldest_first=True, limit=None):
+            if msg.type != discord.MessageType.default:
+                continue
+            if _is_thread_channel(msg.channel):
+                continue
 
-    async def _post_via_webhook(self, webhook_url: str, content: str, image_urls: list[str]):
-        webhook = discord.Webhook.from_url(webhook_url, client=self.bot.http._HTTPClient__session)
-        if image_urls:
-            # text first, then images (one message per original message)
-            files = []
-            for url in image_urls:
-                files.append(discord.File(fp=await self._fetch_bytes(url), filename="image"))
-            await webhook.send(content=content or None, files=files, wait=True)
-        else:
-            await webhook.send(content=content or None, wait=True)
+            text = _sanitize_content(msg.content)
+            images = [att.url for att in msg.attachments if _is_image_attachment(att)]
+            if not text and not images:
+                continue
 
-    async def _fetch_bytes(self, url: str) -> bytes:
-        async with self.bot.http._HTTPClient__session.get(url) as resp:
-            return await resp.read()
+            count += 1
+        return count
 
-    # ---------- command ----------
+    async def _send_via_webhook(self, session: aiohttp.ClientSession, webhook_url: str, content: str) -> None:
+        webhook = discord.Webhook.from_url(webhook_url, session=session)
+        await webhook.send(
+            content=content if content else None,
+            wait=True,
+            allowed_mentions=QUIET_ALLOWED_MENTIONS,
+        )
+
     @app_commands.command(
         name="archiveforward",
-        description="Archive a channel to a destination via webhook (manual, confirmed)."
+        description="Forward a channel history to a destination via webhook (manual + confirmed).",
     )
     @app_commands.describe(
-        source_channel="Source channel to archive",
+        source_channel="Source channel",
         destination_webhook="Destination webhook URL",
-        log_channel="Logging channel",
-        override="Override if this source was archived before"
+        log_channel="Log channel",
+        override="Override hard block / reset and re-run source",
     )
     async def archiveforward(
         self,
@@ -64,7 +139,6 @@ class ArchiveForward(commands.Cog):
         log_channel: discord.TextChannel,
         override: Optional[bool] = False,
     ):
-        # runtime validation only
         missing = []
         if not source_channel:
             missing.append("source_channel")
@@ -79,132 +153,201 @@ class ArchiveForward(commands.Cog):
             )
             return
 
-        run_key = self._run_key(source_channel.id, destination_webhook)
-        state = self._runs.get(run_key)
+        source_id = source_channel.id
+        st = self._get_source_state(source_id)
 
-        if state and not override:
+        if st.get("completed") and not override:
             await interaction.response.send_message(
-                "Hard block: this source appears already archived. Re-run with override=true to proceed.",
+                "Hard block: source channel already archived. Re-run with override=true to proceed.",
                 ephemeral=True
             )
             return
 
-        # dry-run summary
-        await interaction.response.send_message(
-            f"Dry run:\n"
-            f"Source: {source_channel.mention}\n"
-            f"Destination: webhook\n"
-            f"Logging: {log_channel.mention}\n\n"
-            f"Confirm to begin archival.",
-            ephemeral=True
+        if override:
+            self._set_source_state(source_id, completed=False, last_message_id=None)
+            st = self._get_source_state(source_id)
+
+        operator_id = interaction.user.id
+        wh_fp = _webhook_fingerprint(destination_webhook)
+
+        await interaction.response.defer(ephemeral=True)
+
+        est_count = None
+        try:
+            est_count = await self._eligible_message_count(source_channel)
+        except Exception:
+            est_count = None
+
+        last_id = st.get("last_message_id")
+        resume_note = f"Resume after message_id {last_id}" if last_id else "Resume from beginning"
+
+        dry = (
+            "Dry run:\n"
+            f"Operator: {operator_id}\n"
+            f"Source channel ID: {source_id}\n"
+            f"Destination webhook: {wh_fp}\n"
+            f"Log channel ID: {log_channel.id}\n"
+            f"Estimated eligible messages: {est_count if est_count is not None else 'unknown'}\n"
+            f"{resume_note}\n\n"
+            "Confirm to begin."
         )
+        await interaction.followup.send(dry, ephemeral=True, allowed_mentions=QUIET_ALLOWED_MENTIONS)
 
-        # confirmation button
-        view = discord.ui.View(timeout=60)
+        view = discord.ui.View(timeout=90)
 
-        async def _confirm(inter: discord.Interaction):
-            await inter.response.defer(ephemeral=True)
+        async def _confirm_cb(btn_inter: discord.Interaction):
+            if btn_inter.user.id != operator_id:
+                await btn_inter.response.send_message("Not authorized for this run.", ephemeral=True)
+                return
+            await btn_inter.response.defer(ephemeral=True)
+
+            await self._log(
+                log_channel,
+                "ArchiveForward START\n"
+                f"Operator: {operator_id}\n"
+                f"Source channel ID: {source_id}\n"
+                f"Destination webhook: {wh_fp}\n"
+                f"Log channel ID: {log_channel.id}\n"
+                f"Estimated eligible messages: {est_count if est_count is not None else 'unknown'}\n"
+                f"Resume last_message_id: {last_id if last_id else 'None'}"
+            )
+
             await self._execute_archive(
-                interaction=inter,
+                interaction=btn_inter,
                 source_channel=source_channel,
                 destination_webhook=destination_webhook,
                 log_channel=log_channel,
-                run_key=run_key
+                operator_id=operator_id,
+                webhook_fp=wh_fp,
             )
 
-        view.add_item(
-            discord.ui.Button(
-                label="CONFIRM ARCHIVE",
-                style=discord.ButtonStyle.danger,
-                custom_id="archive_confirm"
-            )
-        )
+        async def _cancel_cb(btn_inter: discord.Interaction):
+            if btn_inter.user.id != operator_id:
+                await btn_inter.response.send_message("Not authorized for this run.", ephemeral=True)
+                return
+            await btn_inter.response.send_message("Cancelled.", ephemeral=True)
 
-        async def on_interaction_check(inter: discord.Interaction):
-            return inter.user.id == interaction.user.id
+        confirm_btn = discord.ui.Button(label="CONFIRM ARCHIVE", style=discord.ButtonStyle.danger)
+        cancel_btn = discord.ui.Button(label="CANCEL", style=discord.ButtonStyle.secondary)
+        confirm_btn.callback = _confirm_cb
+        cancel_btn.callback = _cancel_cb
+        view.add_item(confirm_btn)
+        view.add_item(cancel_btn)
 
-        view.interaction_check = on_interaction_check
-
-        async def on_timeout():
-            pass
-
-        view.on_timeout = on_timeout
-
-        # bind callback
-        view.children[0].callback = _confirm
         await interaction.followup.send("Awaiting confirmation.", view=view, ephemeral=True)
 
-    # ---------- execution ----------
     async def _execute_archive(
         self,
         interaction: discord.Interaction,
         source_channel: discord.TextChannel,
         destination_webhook: str,
         log_channel: discord.TextChannel,
-        run_key: str,
-    ):
-        # init state
-        self._runs[run_key] = {
-            "attempts": 0,
-            "last_message_id": None,
-            "completed": False,
-        }
+        operator_id: int,
+        webhook_fp: str,
+    ) -> None:
+        source_id = source_channel.id
 
-        await self._log(log_channel, "ArchiveForward START")
         attempts = 0
+        forwarded = 0
 
-        while attempts < MAX_RESUME_ATTEMPTS:
-            attempts += 1
-            self._runs[run_key]["attempts"] = attempts
-            try:
-                count = 0
-                async for msg in source_channel.history(oldest_first=True, limit=None):
-                    # exclusions
-                    if msg.author.bot and msg.type != discord.MessageType.default:
-                        continue
-                    if msg.type != discord.MessageType.default:
-                        continue
-                    if msg.stickers:
-                        continue
-                    if msg.thread:
-                        continue
+        async with aiohttp.ClientSession() as session:
+            while attempts < MAX_RESUME_ATTEMPTS:
+                attempts += 1
+                try:
+                    st = self._get_source_state(source_id)
+                    last_id_str = st.get("last_message_id")
+                    after_obj = None
+                    if last_id_str:
+                        try:
+                            after_obj = discord.Object(id=int(last_id_str))
+                        except Exception:
+                            after_obj = None
 
-                    text = self._sanitize_text(msg.content)
-                    images = [att.url for att in msg.attachments if self._is_image(att)]
-
-                    if not text and not images:
-                        continue
-
-                    await self._post_via_webhook(
-                        destination_webhook,
-                        content=text,
-                        image_urls=images
-                    )
-
-                    self._runs[run_key]["last_message_id"] = msg.id
-                    count += 1
-
-                    if count % PROGRESS_INTERVAL == 0:
+                    if attempts > 1:
                         await self._log(
                             log_channel,
-                            f"ArchiveForward progress: {count} messages forwarded"
+                            f"ArchiveForward RESUME attempt {attempts}/{MAX_RESUME_ATTEMPTS} "
+                            f"(after {last_id_str if last_id_str else 'None'})"
                         )
 
-                self._runs[run_key]["completed"] = True
-                await self._log(log_channel, "ArchiveForward COMPLETE")
-                await interaction.followup.send("Archive complete.", ephemeral=True)
-                return
+                    async for msg in source_channel.history(oldest_first=True, limit=None, after=after_obj):
+                        if msg.type != discord.MessageType.default:
+                            continue
+                        if _is_thread_channel(msg.channel):
+                            continue
 
-            except Exception as e:
-                await self._log(
-                    log_channel,
-                    f"ArchiveForward ERROR attempt {attempts}: {type(e).__name__}"
-                )
-                if attempts >= MAX_RESUME_ATTEMPTS:
-                    await self._log(log_channel, "ArchiveForward ABORTED after max retries")
-                    await interaction.followup.send("Archive aborted after failures.", ephemeral=True)
+                        text = _sanitize_content(msg.content)
+                        images = [att.url for att in msg.attachments if _is_image_attachment(att)]
+
+                        if not text and not images:
+                            continue
+
+                        parts: List[str] = []
+                        if text:
+                            parts.append(text)
+                        if images:
+                            parts.extend(images)
+
+                        out = _truncate("\n".join(parts))
+
+                        await self._send_via_webhook(session, destination_webhook, out)
+
+                        forwarded += 1
+                        self._set_source_state(source_id, last_message_id=msg.id)
+
+                        if forwarded % PROGRESS_INTERVAL == 0:
+                            st2 = self._get_source_state(source_id)
+                            await self._log(
+                                log_channel,
+                                "ArchiveForward PROGRESS\n"
+                                f"Operator: {operator_id}\n"
+                                f"Source: {source_id}\n"
+                                f"Webhook: {webhook_fp}\n"
+                                f"Forwarded: {forwarded}\n"
+                                f"Last message_id: {st2.get('last_message_id')}"
+                            )
+
+                    self._set_source_state(source_id, completed=True)
+                    await self._log(
+                        log_channel,
+                        "ArchiveForward COMPLETE\n"
+                        f"Operator: {operator_id}\n"
+                        f"Source: {source_id}\n"
+                        f"Webhook: {webhook_fp}\n"
+                        f"Forwarded: {forwarded}\n"
+                        f"Completed: true"
+                    )
+                    await interaction.followup.send("Archive complete.", ephemeral=True)
                     return
-                await asyncio.sleep(5)
+
+                except Exception as e:
+                    await self._log(
+                        log_channel,
+                        "ArchiveForward ERROR\n"
+                        f"Operator: {operator_id}\n"
+                        f"Source: {source_id}\n"
+                        f"Webhook: {webhook_fp}\n"
+                        f"Attempt: {attempts}/{MAX_RESUME_ATTEMPTS}\n"
+                        f"Error: {type(e).__name__}: {str(e)[:240]}"
+                    )
+
+                    if attempts >= MAX_RESUME_ATTEMPTS:
+                        st3 = self._get_source_state(source_id)
+                        await self._log(
+                            log_channel,
+                            "ArchiveForward ABORT\n"
+                            f"Operator: {operator_id}\n"
+                            f"Source: {source_id}\n"
+                            f"Webhook: {webhook_fp}\n"
+                            f"Forwarded: {forwarded}\n"
+                            f"Last message_id: {st3.get('last_message_id')}\n"
+                            "Reason: max resume attempts reached"
+                        )
+                        await interaction.followup.send("Archive aborted after failures.", ephemeral=True)
+                        return
+
+                    await asyncio.sleep(RESUME_DELAY_SECONDS)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ArchiveForward(bot))
