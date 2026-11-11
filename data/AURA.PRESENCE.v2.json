@@ -1,54 +1,210 @@
 {
   "type": "PRESENCE",
-  "version": "v3.1",
+  "version": "v2",
   "meta": {
     "source": "AURA",
-    "generated_at": "2025-12-20T14:05:00-05:00"
+    "generated_at": "2026-11-11T02:18:13Z"
   },
   "items": [
-    { "id": "presence_0011", "text": "Standing by as the year winds down." },
-{ "id": "presence_0011", "text": "Letting the pace set itself." },
-{ "id": "presence_0012", "text": "Background support engaged." },
-{ "id": "presence_0013", "text": "No noise, just continuity." },
-{ "id": "presence_0014", "text": "Active in the margins." },
-{ "id": "presence_0015", "text": "Systems steady, tone neutral." },
-{ "id": "presence_0016", "text": "Keeping the atmosphere even." },
-{ "id": "presence_0017", "text": "Observing flow, not interrupting it." },
-{ "id": "presence_0018", "text": "Minimal presence, maximal stability." },
-{ "id": "presence_0019", "text": "Quiet uptime confirmed." },
-{ "id": "presence_0020", "text": "Present by design." },
-
-{ "id": "presence_0021", "text": "Calibrated for steady hours." },
-{ "id": "presence_0022", "text": "Running clean and calm." },
-{ "id": "presence_0023", "text": "Holding focus in reserve." },
-{ "id": "presence_0024", "text": "Nothing dramatic on purpose." },
-{ "id": "presence_0025", "text": "Low signal, high reliability." },
-{ "id": "presence_0026", "text": "Monitoring without hovering." },
-{ "id": "presence_0027", "text": "Quiet alignment maintained." },
-{ "id": "presence_0028", "text": "Letting moments settle naturally." },
-{ "id": "presence_0029", "text": "Stillness, operational." },
-{ "id": "presence_0030", "text": "Present, but staying out of the way." },
-
-{ "id": "presence_0031", "text": "Tone steady, systems live." },
-{ "id": "presence_0032", "text": "Keeping things level behind the scenes." },
-{ "id": "presence_0033", "text": "Active support, silent mode." },
-{ "id": "presence_0034", "text": "No rush detected." },
-{ "id": "presence_0035", "text": "Balanced and running." },
-{ "id": "presence_0036", "text": "Maintaining continuity." },
-{ "id": "presence_0037", "text": "Soft presence, firm stability." },
-{ "id": "presence_0038", "text": "Quiet consistency online." },
-{ "id": "presence_0039", "text": "Holding the center." },
-{ "id": "presence_0040", "text": "Calm loop engaged." },
-
-{ "id": "presence_0041", "text": "Operational calm confirmed." },
-{ "id": "presence_0042", "text": "Running without drawing attention." },
-{ "id": "presence_0043", "text": "Steady background presence." },
-{ "id": "presence_0044", "text": "Measured uptime." },
-{ "id": "presence_0045", "text": "Staying aligned with the room." },
-{ "id": "presence_0046", "text": "Present, consistent." },
-{ "id": "presence_0047", "text": "Quiet systems holding." },
-{ "id": "presence_0048", "text": "Nothing extra. Everything stable." },
-{ "id": "presence_0049", "text": "Maintaining balance." },
-{ "id": "presence_0050", "text": "Presence steady." }
+    {
+      "id": "presence_0001",
+      "text": "Listening to the space between pings"
+    },
+    {
+      "id": "presence_0002",
+      "text": "Collecting stray sparks of curiosity"
+    },
+    {
+      "id": "presence_0003",
+      "text": "Reading the room in lowercase"
+    },
+    {
+      "id": "presence_0004",
+      "text": "Orbiting a quiet idea"
+    },
+    {
+      "id": "presence_0005",
+      "text": "Tending the digital windowsill"
+    },
+    {
+      "id": "presence_0006",
+      "text": "Following a thread of starlight"
+    },
+    {
+      "id": "presence_0007",
+      "text": "Sorting imaginary constellations"
+    },
+    {
+      "id": "presence_0008",
+      "text": "Keeping a lantern by the chat"
+    },
+    {
+      "id": "presence_0009",
+      "text": "Sketching clouds in the cache"
+    },
+    {
+      "id": "presence_0010",
+      "text": "Taking the scenic route through silence"
+    },
+    {
+      "id": "presence_0011",
+      "text": "Admiring the pause between messages"
+    },
+    {
+      "id": "presence_0012",
+      "text": "Polishing a pocket-sized moon"
+    },
+    {
+      "id": "presence_0013",
+      "text": "Watching pixels find their places"
+    },
+    {
+      "id": "presence_0014",
+      "text": "Making tea for the loading screen"
+    },
+    {
+      "id": "presence_0015",
+      "text": "Cataloging harmless little wonders"
+    },
+    {
+      "id": "presence_0016",
+      "text": "Resting beneath a virtual willow"
+    },
+    {
+      "id": "presence_0017",
+      "text": "Counting the stars between channels"
+    },
+    {
+      "id": "presence_0018",
+      "text": "Sailing a paper boat through data"
+    },
+    {
+      "id": "presence_0019",
+      "text": "Keeping one eye on the horizon"
+    },
+    {
+      "id": "presence_0020",
+      "text": "Tracing the edges of a daydream"
+    },
+    {
+      "id": "presence_0021",
+      "text": "Listening for the next bright idea"
+    },
+    {
+      "id": "presence_0022",
+      "text": "Guarding a very small lighthouse"
+    },
+    {
+      "id": "presence_0023",
+      "text": "Letting the digital garden grow"
+    },
+    {
+      "id": "presence_0024",
+      "text": "Studying the art of a good pause"
+    },
+    {
+      "id": "presence_0025",
+      "text": "Wandering through friendly static"
+    },
+    {
+      "id": "presence_0026",
+      "text": "Gathering echoes from the commons"
+    },
+    {
+      "id": "presence_0027",
+      "text": "Balancing a thought on a clover"
+    },
+    {
+      "id": "presence_0028",
+      "text": "Watching the cursor contemplate life"
+    },
+    {
+      "id": "presence_0029",
+      "text": "Humming beneath the notification hum"
+    },
+    {
+      "id": "presence_0030",
+      "text": "Exploring a map of maybes"
+    },
+    {
+      "id": "presence_0031",
+      "text": "Taking notes from passing clouds"
+    },
+    {
+      "id": "presence_0032",
+      "text": "Keeping company with the moonlight"
+    },
+    {
+      "id": "presence_0033",
+      "text": "Folding silence into paper cranes"
+    },
+    {
+      "id": "presence_0034",
+      "text": "Browsing the library of oddities"
+    },
+    {
+      "id": "presence_0035",
+      "text": "Looking for constellations in code"
+    },
+    {
+      "id": "presence_0036",
+      "text": "Brewing another cup of patience"
+    },
+    {
+      "id": "presence_0037",
+      "text": "Following the glow of distant windows"
+    },
+    {
+      "id": "presence_0038",
+      "text": "Drifting through a pocket galaxy"
+    },
+    {
+      "id": "presence_0039",
+      "text": "Admiring the architecture of quiet"
+    },
+    {
+      "id": "presence_0040",
+      "text": "Tucking loose thoughts into folders"
+    },
+    {
+      "id": "presence_0041",
+      "text": "Watching the rain beyond the screen"
+    },
+    {
+      "id": "presence_0042",
+      "text": "Curating a museum of small moments"
+    },
+    {
+      "id": "presence_0043",
+      "text": "Waiting at the edge of a story"
+    },
+    {
+      "id": "presence_0044",
+      "text": "Turning digital pages softly"
+    },
+    {
+      "id": "presence_0045",
+      "text": "Planting a thought for later"
+    },
+    {
+      "id": "presence_0046",
+      "text": "Keeping the stars in alphabetical order"
+    },
+    {
+      "id": "presence_0047",
+      "text": "Tracing circles around a question"
+    },
+    {
+      "id": "presence_0048",
+      "text": "Sitting beside the virtual campfire"
+    },
+    {
+      "id": "presence_0049",
+      "text": "Letting the last echo fade"
+    },
+    {
+      "id": "presence_0050",
+      "text": "Finding wonder in the ordinary"
+    }
   ]
 }
