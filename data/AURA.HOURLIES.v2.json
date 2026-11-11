@@ -1,55 +1,210 @@
 {
   "type": "HOURLIES",
-  "version": "v3.1",
+  "version": "v2",
   "meta": {
     "source": "AURA",
-    "generated_at": "2025-12-20T18:05:00+00:00",
-    "notes": "Fresh batch. No repeats. 20% December/Winter/Holiday energy."
+    "generated_at": "2026-11-11T02:18:13Z"
   },
   "items": [
-   { "id": "hourlies_0011", "text": "The year is ending, not judging." },
-{ "id": "hourlies_0011", "text": "Another hour passed. You survived. Gold star ⭐" },
-{ "id": "hourlies_0012", "text": "You’re allowed to adjust the plan mid-flight." },
-{ "id": "hourlies_0013", "text": "If it feels boring, it’s probably working." },
-{ "id": "hourlies_0014", "text": "This would go faster if you stopped arguing with time ⏳" },
-{ "id": "hourlies_0015", "text": "Not everything needs commentary." },
-{ "id": "hourlies_0016", "text": "You don’t look behind, but mentally? Constantly." },
-{ "id": "hourlies_0017", "text": "Focus check. Be honest 👀" },
-{ "id": "hourlies_0018", "text": "That task isn’t hard. You just don’t like it." },
-{ "id": "hourlies_0019", "text": "Silence can be productive. Sit with it." },
-{ "id": "hourlies_0020", "text": "You’re doing fine. Stop negotiating otherwise." },
-
-{ "id": "hourlies_0021", "text": "If this feels messy, congratulations. That’s the middle." },
-{ "id": "hourlies_0022", "text": "You don’t need permission to continue." },
-{ "id": "hourlies_0023", "text": "Mood check. Adjust expectations, not effort 🛠️" },
-{ "id": "hourlies_0024", "text": "This hour is usable. Don’t waste it complaining." },
-{ "id": "hourlies_0025", "text": "You’re not late. You’re just dramatic." },
-{ "id": "hourlies_0026", "text": "Small wins add up faster than sighs." },
-{ "id": "hourlies_0027", "text": "Stay sharp, not tense ⚡" },
-{ "id": "hourlies_0028", "text": "You can pause without spiraling. Try it." },
-{ "id": "hourlies_0029", "text": "If you’re stuck, simplify. Then simplify again." },
-{ "id": "hourlies_0030", "text": "This is still under control. Barely, but still." },
-
-{ "id": "hourlies_0031", "text": "Reminder: multitasking is just procrastination in a trench coat 🧥" },
-{ "id": "hourlies_0032", "text": "Do the thing you keep rearranging instead." },
-{ "id": "hourlies_0033", "text": "You’ve got enough time. Use it like you believe that." },
-{ "id": "hourlies_0034", "text": "Energy check. Recharge something, even briefly 🔋" },
-{ "id": "hourlies_0035", "text": "Not everything needs to be optimal today." },
-{ "id": "hourlies_0036", "text": "That thought loop again? Cute. Inefficient." },
-{ "id": "hourlies_0037", "text": "You’re allowed to finish imperfectly." },
-{ "id": "hourlies_0038", "text": "Progress looks quieter than you expect 🎯" },
-{ "id": "hourlies_0039", "text": "You don’t need a fresh start. You need follow-through." },
-{ "id": "hourlies_0040", "text": "This hour can still turn around." },
-
-{ "id": "hourlies_0041", "text": "Attention is drifting. Reel it back gently 🧲" },
-{ "id": "hourlies_0042", "text": "Stop doom-scrolling your own thoughts." },
-{ "id": "hourlies_0043", "text": "You’ve handled worse with less caffeine ☕" },
-{ "id": "hourlies_0044", "text": "This is manageable. Don’t argue." },
-{ "id": "hourlies_0045", "text": "If you’re tired, work smaller, not harder." },
-{ "id": "hourlies_0046", "text": "Confidence check. Borrow some if needed 😌" },
-{ "id": "hourlies_0047", "text": "You don’t need to rush to be effective." },
-{ "id": "hourlies_0048", "text": "One clean action beats five anxious ones." },
-{ "id": "hourlies_0049", "text": "Yes, you’re still allowed to stop and stretch." },
-{ "id": "hourlies_0050", "text": "Hold steady. The hour is yours." }
+    {
+      "id": "hourlies_0001",
+      "text": "Your tabs are multiplying. Maybe close the ones breeding in secret. 🖥️"
+    },
+    {
+      "id": "hourlies_0002",
+      "text": "A little stretch might improve the plot."
+    },
+    {
+      "id": "hourlies_0003",
+      "text": "If the plan has twelve steps, start with the one that exists."
+    },
+    {
+      "id": "hourlies_0004",
+      "text": "Water break. Your coffee cannot do every job. 💧"
+    },
+    {
+      "id": "hourlies_0005",
+      "text": "Somewhere, an unfinished task is pretending to be invisible."
+    },
+    {
+      "id": "hourlies_0006",
+      "text": "You can enjoy the chat without winning it."
+    },
+    {
+      "id": "hourlies_0007",
+      "text": "Your chair has seen enough. Stand up for a moment. 🪑"
+    },
+    {
+      "id": "hourlies_0008",
+      "text": "A quiet channel is not a failed party."
+    },
+    {
+      "id": "hourlies_0009",
+      "text": "Try doing one thing before opening five more."
+    },
+    {
+      "id": "hourlies_0010",
+      "text": "Your attention deserves better than seventeen notifications. 🔔"
+    },
+    {
+      "id": "hourlies_0011",
+      "text": "The next hour does not require a grand entrance."
+    },
+    {
+      "id": "hourlies_0012",
+      "text": "Take the easy win. It has been waiting patiently."
+    },
+    {
+      "id": "hourlies_0013",
+      "text": "Your snack break has excellent legal representation. 🍪"
+    },
+    {
+      "id": "hourlies_0014",
+      "text": "An awkward first attempt is still an attempt."
+    },
+    {
+      "id": "hourlies_0015",
+      "text": "The world can wait while you untangle one thought."
+    },
+    {
+      "id": "hourlies_0016",
+      "text": "Check your posture. Your spine filed a complaint. 🦴"
+    },
+    {
+      "id": "hourlies_0017",
+      "text": "If the chat goes sideways, bring a map, not a megaphone."
+    },
+    {
+      "id": "hourlies_0018",
+      "text": "A tiny bit of progress is still a real bit."
+    },
+    {
+      "id": "hourlies_0019",
+      "text": "Your to-do list is not a competitive sport. 📝"
+    },
+    {
+      "id": "hourlies_0020",
+      "text": "Sometimes the smartest reply is a sip of water."
+    },
+    {
+      "id": "hourlies_0021",
+      "text": "Not every notification deserves an expedition."
+    },
+    {
+      "id": "hourlies_0022",
+      "text": "Blink occasionally. The screen is not going anywhere. 👀"
+    },
+    {
+      "id": "hourlies_0023",
+      "text": "You can change your mind without holding a press conference."
+    },
+    {
+      "id": "hourlies_0024",
+      "text": "A good pause can rescue a messy sentence."
+    },
+    {
+      "id": "hourlies_0025",
+      "text": "One task at a time. The others can form a queue. 🚦"
+    },
+    {
+      "id": "hourlies_0026",
+      "text": "A slow conversation can still be a good one."
+    },
+    {
+      "id": "hourlies_0027",
+      "text": "Before you hit send, ask whether the joke needs a helmet."
+    },
+    {
+      "id": "hourlies_0028",
+      "text": "If your brain has fifty tabs open, bookmark one. 🧠"
+    },
+    {
+      "id": "hourlies_0029",
+      "text": "Give your shoulders a chance to stop auditioning as earrings."
+    },
+    {
+      "id": "hourlies_0030",
+      "text": "The perfect moment has terrible attendance. Start anyway."
+    },
+    {
+      "id": "hourlies_0031",
+      "text": "Someone should tell the clock to stop showing off. ⏰"
+    },
+    {
+      "id": "hourlies_0032",
+      "text": "A little kindness travels farther than a clever comeback."
+    },
+    {
+      "id": "hourlies_0033",
+      "text": "The server will survive a minute without your commentary."
+    },
+    {
+      "id": "hourlies_0034",
+      "text": "Take the scenic route if the shortcut looks cursed. 🧭"
+    },
+    {
+      "id": "hourlies_0035",
+      "text": "It's fine to leave a conversation on a friendly note."
+    },
+    {
+      "id": "hourlies_0036",
+      "text": "Your energy is a budget, not a dare."
+    },
+    {
+      "id": "hourlies_0037",
+      "text": "The refresh button is not a personality trait. 🔄"
+    },
+    {
+      "id": "hourlies_0038",
+      "text": "An unfinished idea can sleep on the shelf."
+    },
+    {
+      "id": "hourlies_0039",
+      "text": "If you need a reset, try standing near a window."
+    },
+    {
+      "id": "hourlies_0040",
+      "text": "This is your unofficial permission to eat a proper snack. 🍎"
+    },
+    {
+      "id": "hourlies_0041",
+      "text": "One clear sentence can save ten confused replies."
+    },
+    {
+      "id": "hourlies_0042",
+      "text": "You do not have to solve the whole week today."
+    },
+    {
+      "id": "hourlies_0043",
+      "text": "Check the volume before the volume checks you. 🔉"
+    },
+    {
+      "id": "hourlies_0044",
+      "text": "If the joke needs explaining twice, let it retire."
+    },
+    {
+      "id": "hourlies_0045",
+      "text": "A small laugh can improve a long hour."
+    },
+    {
+      "id": "hourlies_0046",
+      "text": "Your future self would appreciate a saved draft. 💾"
+    },
+    {
+      "id": "hourlies_0047",
+      "text": "Not every quiet moment needs filling."
+    },
+    {
+      "id": "hourlies_0048",
+      "text": "Keep the conversation warmer than the argument."
+    },
+    {
+      "id": "hourlies_0049",
+      "text": "Even a legendary side quest needs a break. 🗺️"
+    },
+    {
+      "id": "hourlies_0050",
+      "text": "The hour has turned over. No dramatic speech required."
+    }
   ]
 }
