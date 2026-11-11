@@ -2,8 +2,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import datetime
+import logging
 
-LOG_CHANNEL_ID = 1427716795615285329  # your say log channel
+logger = logging.getLogger("Aura")
+
+LOG_CHANNEL_ID = 1570078685107851334  # 📝│bb-say-logs
 
 class Say(commands.Cog):
     def __init__(self, bot):
@@ -29,7 +32,10 @@ class Say(commands.Cog):
                 color=discord.Color.green(),
                 timestamp=datetime.datetime.utcnow()
             )
-            await log_channel.send(embed=embed)
+            try:
+                await log_channel.send(embed=embed)
+            except Exception as e:
+                logger.warning("[say] audit log send failed: %s", e, exc_info=True)
 
         await interaction.response.send_message(f"✅ Aura spoke in {target.mention}", ephemeral=True)
 
