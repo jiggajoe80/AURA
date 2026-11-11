@@ -139,6 +139,26 @@ class EmojiCog(commands.Cog):
     def get_guild_config(self, guild_id: int) -> dict:
         return self.config.get(str(guild_id), {}) if self.config else {}
 
+    async def _audit_log(self, message: discord.Message, text: str) -> None:
+        """Send a concise reaction record to this guild's configured log channel."""
+        gc = self.get_guild_config(message.guild.id)
+        raw_channel_id = gc.get("log_channel_id")
+        if not raw_channel_id:
+            self.log.warning("[emoji] no log_channel_id configured for guild=%s", message.guild.id)
+            return
+
+        try:
+            channel_id = int(raw_channel_id)
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                channel = await self.bot.fetch_channel(channel_id)
+            await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+        except Exception as e:
+            self.log.warning(
+                "[emoji] audit log send failed guild=%s target=%s: %s",
+                message.guild.id, raw_channel_id, e, exc_info=True
+            )
+
     def get_pool_file_for(self, guild_id: int) -> str:
         return self._resolve_pool_file(guild_id)
 
@@ -230,6 +250,7 @@ class EmojiCog(commands.Cog):
             return
 
         choice = random.choice(usable)
+        reacted = False
         try:
             # add reaction
             m = EMOJI_TAG_RE.fullmatch(choice)
@@ -239,12 +260,33 @@ class EmojiCog(commands.Cog):
                 emoji_obj = discord.utils.get(self.bot.emojis, id=emoji_id)
                 if emoji_obj:
                     await message.add_reaction(emoji_obj)
+                    reacted = True
             else:
                 # unicode
                 await message.add_reaction(choice)
+                reacted = True
             self._mark_cooldowns(message, gc)
+        except discord.Forbidden as e:
+            self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e, exc_info=True)
+            await self._audit_log(
+                message,
+                f"[emoji] skipped: perms guild={message.guild.id} ch={message.channel.id} "
+                f"msg={message.id} bucket={bucket} (Add Reactions / External Emoji?)"
+            )
         except Exception as e:
-            self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e)
+            self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e, exc_info=True)
+            await self._audit_log(
+                message,
+                f"[emoji] error guild={message.guild.id} ch={message.channel.id} "
+                f"msg={message.id} bucket={bucket} error={type(e).__name__}"
+            )
+        else:
+            if reacted:
+                await self._audit_log(
+                    message,
+                    f"[emoji] sprinkle bucket={bucket} guild={message.guild.id} "
+                    f"ch={message.channel.id} msg={message.id} emoji={choice}"
+                )
 
     # ---------- small admin utility ----------
 

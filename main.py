@@ -26,6 +26,7 @@ INITIAL_EXTENSIONS = [
     "cogs.events",
     "cogs.fortunes",
     "cogs.say",
+    "cogs.emoji",
     "cogs.timezones",
     "cogs.flip",
     "cogs.profile",
