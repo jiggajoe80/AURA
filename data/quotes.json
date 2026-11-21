@@ -1,5 +1,400 @@
 [
-  { "text": "Luck favors the prepared.", "author": "AURA", "tags": ["daily"] },
-  { "text": "Four leaves. One intent.", "author": "Jabb", "tags": ["clover","brand"] },
-  { "text": "Quiet menace. Clean execution.", "author": "Jabb", "tags": ["motto"] }
+  {
+    "text": "Luck favors the prepared.",
+    "author": "AURA",
+    "tags": [
+      "daily"
+    ]
+  },
+  {
+    "text": "Four leaves. One intent.",
+    "author": "Jabb",
+    "tags": [
+      "clover",
+      "brand"
+    ]
+  },
+  {
+    "text": "Quiet menace. Clean execution.",
+    "author": "Jabb",
+    "tags": [
+      "motto"
+    ]
+  },
+  {
+    "text": "Power that needs applause is still asking permission.",
+    "author": "Jabb",
+    "tags": [
+      "power",
+      "restraint"
+    ]
+  },
+  {
+    "text": "Some doors deserve a lock, not a speech.",
+    "author": "Jabb",
+    "tags": [
+      "boundaries",
+      "precision"
+    ]
+  },
+  {
+    "text": "Silence is not surrender. It is selection.",
+    "author": "Jabb",
+    "tags": [
+      "restraint",
+      "control"
+    ]
+  },
+  {
+    "text": "Control the tempo. Let the noise chase it.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "composure"
+    ]
+  },
+  {
+    "text": "Influence rarely announces itself.",
+    "author": "Jabb",
+    "tags": [
+      "influence",
+      "restraint"
+    ]
+  },
+  {
+    "text": "Never confuse visibility with position.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "clarity"
+    ]
+  },
+  {
+    "text": "A steady hand makes fewer promises.",
+    "author": "Jabb",
+    "tags": [
+      "discipline",
+      "trust"
+    ]
+  },
+  {
+    "text": "Keep the advantage. Lose the performance.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "restraint"
+    ]
+  },
+  {
+    "text": "I don't chase the room. I change its temperature.",
+    "author": "Jabb",
+    "tags": [
+      "presence",
+      "confidence"
+    ]
+  },
+  {
+    "text": "Confidence doesn't need a witness.",
+    "author": "Jabb",
+    "tags": [
+      "confidence",
+      "identity"
+    ]
+  },
+  {
+    "text": "Leave no doubt where you stand.",
+    "author": "Jabb",
+    "tags": [
+      "boundaries",
+      "clarity"
+    ]
+  },
+  {
+    "text": "Some victories are best left unsigned.",
+    "author": "Jabb",
+    "tags": [
+      "victory",
+      "restraint"
+    ]
+  },
+  {
+    "text": "Restraint is a form of ownership.",
+    "author": "Jabb",
+    "tags": [
+      "discipline",
+      "control"
+    ]
+  },
+  {
+    "text": "The sharpest move is often unadvertised.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "precision"
+    ]
+  },
+  {
+    "text": "I prefer leverage to volume.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "confidence"
+    ]
+  },
+  {
+    "text": "Keep your word sharper than your tone.",
+    "author": "Jabb",
+    "tags": [
+      "integrity",
+      "restraint"
+    ]
+  },
+  {
+    "text": "The strongest signal rarely needs repeating.",
+    "author": "Jabb",
+    "tags": [
+      "influence",
+      "clarity"
+    ]
+  },
+  {
+    "text": "Every boundary is a decision made visible.",
+    "author": "Jabb",
+    "tags": [
+      "boundaries",
+      "agency"
+    ]
+  },
+  {
+    "text": "Knowing when to leave is its own advantage.",
+    "author": "Jabb",
+    "tags": [
+      "judgment",
+      "agency"
+    ]
+  },
+  {
+    "text": "Respect is earned in the details.",
+    "author": "Jabb",
+    "tags": [
+      "respect",
+      "precision"
+    ]
+  },
+  {
+    "text": "Be difficult to move, not difficult to know.",
+    "author": "Jabb",
+    "tags": [
+      "character",
+      "composure"
+    ]
+  },
+  {
+    "text": "Precision has no interest in applause.",
+    "author": "Jabb",
+    "tags": [
+      "precision",
+      "restraint"
+    ]
+  },
+  {
+    "text": "Access is a privilege, not a personality test.",
+    "author": "Jabb",
+    "tags": [
+      "boundaries",
+      "humor"
+    ]
+  },
+  {
+    "text": "Consistency is the part luck cannot impersonate.",
+    "author": "Jabb",
+    "tags": [
+      "luck",
+      "discipline"
+    ]
+  },
+  {
+    "text": "Clovers are symbols. Choices carry the weight.",
+    "author": "Jabb",
+    "tags": [
+      "clover",
+      "agency"
+    ]
+  },
+  {
+    "text": "An open hand can still hold a line.",
+    "author": "Jabb",
+    "tags": [
+      "kindness",
+      "boundaries"
+    ]
+  },
+  {
+    "text": "You can be kind without being negotiable.",
+    "author": "Jabb",
+    "tags": [
+      "kindness",
+      "resolve"
+    ]
+  },
+  {
+    "text": "Every empire has a maintenance problem.",
+    "author": "Jabb",
+    "tags": [
+      "leadership",
+      "humor"
+    ]
+  },
+  {
+    "text": "Underestimate the patient at your convenience.",
+    "author": "Jabb",
+    "tags": [
+      "patience",
+      "confidence"
+    ]
+  },
+  {
+    "text": "Borrowed power expires at inconvenient times.",
+    "author": "Jabb",
+    "tags": [
+      "power",
+      "independence"
+    ]
+  },
+  {
+    "text": "A small circle can have a long reach.",
+    "author": "Jabb",
+    "tags": [
+      "community",
+      "influence"
+    ]
+  },
+  {
+    "text": "Protect the peace; inspect the terms.",
+    "author": "Jabb",
+    "tags": [
+      "peace",
+      "judgment"
+    ]
+  },
+  {
+    "text": "The trick isn't getting noticed. It's being remembered correctly.",
+    "author": "Jabb",
+    "tags": [
+      "identity",
+      "reputation"
+    ]
+  },
+  {
+    "text": "An empty threat makes excellent decoration.",
+    "author": "Jabb",
+    "tags": [
+      "humor",
+      "strength"
+    ]
+  },
+  {
+    "text": "Never hand the steering wheel to a loud passenger.",
+    "author": "Jabb",
+    "tags": [
+      "judgment",
+      "control"
+    ]
+  },
+  {
+    "text": "Some plans belong behind the curtain.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "discretion"
+    ]
+  },
+  {
+    "text": "When the room gets noisy, check who benefits.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "awareness"
+    ]
+  },
+  {
+    "text": "Leave room for surprise, not confusion.",
+    "author": "Jabb",
+    "tags": [
+      "planning",
+      "clarity"
+    ]
+  },
+  {
+    "text": "Calm is a position, not a mood.",
+    "author": "Jabb",
+    "tags": [
+      "composure",
+      "identity"
+    ]
+  },
+  {
+    "text": "What you permit becomes part of the architecture.",
+    "author": "Jabb",
+    "tags": [
+      "boundaries",
+      "consequence"
+    ]
+  },
+  {
+    "text": "The mark of control is knowing what not to touch.",
+    "author": "Jabb",
+    "tags": [
+      "control",
+      "judgment"
+    ]
+  },
+  {
+    "text": "Stay curious. Keep your keys.",
+    "author": "Jabb",
+    "tags": [
+      "curiosity",
+      "sovereignty"
+    ]
+  },
+  {
+    "text": "A promise is heavier than a title.",
+    "author": "Jabb",
+    "tags": [
+      "integrity",
+      "leadership"
+    ]
+  },
+  {
+    "text": "Even kings misplace the instruction manual.",
+    "author": "Jabb",
+    "tags": [
+      "humor",
+      "power"
+    ]
+  },
+  {
+    "text": "Build the foundation before admiring the flag.",
+    "author": "Jabb",
+    "tags": [
+      "discipline",
+      "leadership"
+    ]
+  },
+  {
+    "text": "The last word is not always the final move.",
+    "author": "Jabb",
+    "tags": [
+      "strategy",
+      "patience"
+    ]
+  },
+  {
+    "text": "Keep the clover. Question the odds.",
+    "author": "Jabb",
+    "tags": [
+      "clover",
+      "judgment"
+    ]
+  }
 ]
