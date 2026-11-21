@@ -44,6 +44,8 @@ class EmojiCog(commands.Cog):
         self._pool_cache: Dict[str, Tuple[float, Pool]] = {}  # pool_file -> (loaded_at, pool)
         self._usable_cache: Dict[Tuple[int, str], Tuple[float, List[str]]] = {}  # (guild_id, bucket) -> (t, list)
         # cooldowns
+        self._pending_channels = set()
+        self._pending_users = set()
         self._chan_cool: Dict[int, float] = {}
         self._user_cool: Dict[Tuple[int, int], float] = {}
 
@@ -219,12 +221,13 @@ class EmojiCog(commands.Cog):
             return
 
         choice = random.choice(usable)
-        # Reserve both cooldown keys before yielding to Discord.
+        # Keep matching messages from racing while Discord processes the reaction.
         channel_key = message.channel.id
         user_key = (message.guild.id, message.author.id)
-        prior_channel = self._chan_cool.get(channel_key, 0.0)
-        prior_user = self._user_cool.get(user_key, 0.0)
-        self._mark_cooldowns(message, gc)
+        if channel_key in self._pending_channels or user_key in self._pending_users:
+            return
+        self._pending_channels.add(channel_key)
+        self._pending_users.add(user_key)
         reacted = False
         try:
             # add reaction
@@ -265,9 +268,8 @@ class EmojiCog(commands.Cog):
                 )
 
         finally:
-            if not reacted:
-                self._chan_cool[channel_key] = prior_channel
-                self._user_cool[user_key] = prior_user
+            self._pending_channels.discard(channel_key)
+            self._pending_users.discard(user_key)
 
     # ---------- small admin utility ----------
 
