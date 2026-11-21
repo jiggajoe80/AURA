@@ -1,10 +1,11 @@
 # =========================
 # FILE: main.py
 # =========================
+from guild_settings import Settings
 import discord
 from discord.ext import tasks, commands
 import os, json, random, logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask
@@ -27,6 +28,10 @@ INITIAL_EXTENSIONS = [
     "cogs.fortunes",
     "cogs.say",
     "cogs.emoji",
+    "cogs.emoji_diag",
+    "cogs.emoji_ids",
+    "cogs.quote",
+    "cogs.polls",
     "cogs.timezones",
     "cogs.flip",
     "cogs.profile",
@@ -37,18 +42,9 @@ DATA_DIR = Path(__file__).parent / "data"
 PRESENCE_FILE = "AURA.PRESENCE.v2.json"
 HOURLIES_FILE = "AURA.HOURLIES.v2.json"
 
-AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
-GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
-
 QUIET_SECONDS = 97 * 60  # 97 minutes
 
 # ────────────── HELPERS ──────────────
-def _load_json(p: Path, default):
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return default
-
 def _load_items_from_json(filename: str):
     fp = DATA_DIR / filename
     try:
@@ -93,12 +89,15 @@ class AuraBot(commands.Bot):
         self.last_post_per_channel = {}
         self.rotation_index = 0
         self.last_reset_date = None
-        self.guild_silent_state = {}
+        self.settings = Settings()
+        self.scheduled_posts_after = datetime.utcnow() + timedelta(seconds=QUIET_SECONDS)
         self.booted_at = None
 
     async def setup_hook(self):
+        await self.settings.refresh()
         for ext in INITIAL_EXTENSIONS:
             await self.load_extension(ext)
+        settings_refresh.start()
 
     def reset_daily(self):
         today = datetime.utcnow().date()
@@ -133,12 +132,14 @@ async def on_ready():
         )
     )
 
-    await bot.tree.sync()
-
-    bot.booted_at = datetime.utcnow()
-    bot.rotation_index = 0
-    bot.guild_silent_state = {}
-    bot.last_post_per_channel = {}
+    if bot.booted_at is None:
+        try:
+            synced = await bot.tree.sync()
+            logger.info("Synced %s global commands", len(synced))
+        except discord.HTTPException:
+            logger.exception("Global command sync failed")
+            return
+        bot.booted_at = datetime.utcnow()
 
     if not autopost_loop.is_running():
         autopost_loop.start()
@@ -160,28 +161,25 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ────────────── AUTPOST LOOP ──────────────
+@tasks.loop(minutes=5)
+async def settings_refresh():
+    await bot.settings.refresh()
+
+
 @tasks.loop(minutes=1)
 async def autopost_loop():
-    ap_map = _load_json(AUTOPOST_MAP_FILE, {})
-    flags = _load_json(GUILD_FLAGS_FILE, {})
     now = datetime.utcnow()
+    if now < bot.scheduled_posts_after:
+        return
     posted_any = False
     jokes_cog = bot.get_cog("JokesCog")
 
     for guild in bot.guilds:
-        gid = str(guild.id)
-        silent_now = bool(flags.get(gid, {}).get("silent", False))
-        silent_prev = bot.guild_silent_state.get(gid, None)
-        bot.guild_silent_state[gid] = silent_now
-
-        if silent_now:
+        settings = bot.settings.get(guild.id)
+        if settings["silent"]:
             continue
 
-        channel_ids = ap_map.get(gid, [])
-        if isinstance(channel_ids, str):
-            channel_ids = [channel_ids]
-        if not isinstance(channel_ids, list):
-            channel_ids = []
+        channel_ids = settings["selected_channel_ids"]
 
         for i, cid in enumerate(channel_ids):
             try:
@@ -190,7 +188,7 @@ async def autopost_loop():
                 continue
 
             channel = bot.get_channel(cid_int)
-            if not channel:
+            if not isinstance(channel, discord.TextChannel) or channel.guild.id != guild.id:
                 continue
 
             last_human = bot.last_channel_activity.get(cid_int)
@@ -206,18 +204,16 @@ async def autopost_loop():
             try:
                 if assign_index == 0 and jokes_cog:
                     msg = jokes_cog.get_random_joke()
-                    if msg:
-                        await channel.send(msg)
+                    if not msg:
+                        continue
+                    await channel.send(msg)
                 else:
                     await channel.send(bot.next_hourly())
 
-                bot.last_post_per_channel[cid_int] = now
+                bot.last_post_per_channel[cid_int] = datetime.utcnow()
                 posted_any = True
-            except Exception:
-                continue
-
-        if silent_prev is True and silent_now is False:
-            bot.last_post_per_channel = {}
+            except discord.HTTPException:
+                logger.warning('Autopost failed in guild %s channel %s', guild.id, cid_int)
 
     if posted_any:
         bot.rotation_index += 1

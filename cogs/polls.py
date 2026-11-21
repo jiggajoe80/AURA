@@ -1,3 +1,4 @@
+import discord
 # cogs/polls.py — Hardened natural poll parser
 from discord import app_commands, Interaction
 from discord.ext import commands
@@ -56,10 +57,13 @@ class Polls(commands.Cog):
         await itx.response.send_message(f"{title}\n{body}")
         msg = await itx.original_response()
 
+        failures = 0
         for i in range(len(options)):
             try:
                 await msg.add_reaction(EMOJI[i])
-            except:
-                pass
+            except (discord.HTTPException, TimeoutError):
+                failures += 1
+        if failures:
+            await itx.followup.send(f"Poll posted, but {failures} voting reactions failed.", ephemeral=True)
 
 async def setup(bot): await bot.add_cog(Polls(bot))

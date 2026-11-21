@@ -6,38 +6,57 @@ import logging
 
 logger = logging.getLogger("Aura")
 
-LOG_CHANNEL_ID = 1570078685107851334  # 📝│bb-say-logs
-
 class Say(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @app_commands.command(name="say", description="Make Aura speak a message as the bot.")
-    @app_commands.describe(
-        message="What should Aura say?",
-        channel="Optional: choose a channel for Aura to speak in"
-    )
+    @app_commands.guild_only()
+    @app_commands.describe(message="What should Aura say?", channel="Optional target channel")
     async def say(self, interaction: discord.Interaction, message: str, channel: discord.TextChannel = None):
+        await interaction.response.defer(ephemeral=True)
         target = channel or interaction.channel
-
-        # Send the message as Aura
-        await target.send(message)
-
-        # Log it to your say log channel
-        log_channel = self.bot.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            embed = discord.Embed(
-                title="🗣️ Aura said something",
-                description=f"**Message:** {message}\n**Channel:** {target.mention}\n**By:** {interaction.user.mention}",
-                color=discord.Color.green(),
-                timestamp=datetime.datetime.utcnow()
-            )
+        audit_id = self.bot.settings.get(interaction.guild_id)["say_log_channel_id"]
+        log_channel = self.bot.get_channel(int(audit_id)) if audit_id else None
+        if (not isinstance(log_channel, discord.TextChannel) or log_channel.guild.id != interaction.guild_id
+                or not isinstance(target, (discord.TextChannel, discord.Thread))
+                or target.guild.id != interaction.guild_id or target.id == log_channel.id):
+            await interaction.followup.send("A valid audit destination and target in this server are required.", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title="🗣️ Aura said something",
+            description=f"**Message:** {message}\n**Channel:** {target.mention}\n**By:** {interaction.user.mention}",
+            color=discord.Color.green(), timestamp=discord.utils.utcnow(),
+        )
+        embed.set_footer(text="Pending delivery")
+        try:
+            audit = await log_channel.send(embed=embed)
+        except (discord.HTTPException, TimeoutError):
+            logger.warning("Say pending audit failed in guild %s", interaction.guild_id)
+            await interaction.followup.send("Audit could not be confirmed. Aura did not send the message.", ephemeral=True)
+            return
+        try:
+            sent = await target.send(message)
+        except (discord.HTTPException, TimeoutError) as exc:
+            uncertain = isinstance(exc, TimeoutError) or getattr(exc, "status", 0) >= 500
+            embed.set_footer(text="Delivery uncertain" if uncertain else "Delivery failed")
             try:
-                await log_channel.send(embed=embed)
-            except Exception as e:
-                logger.warning("[say] audit log send failed: %s", e, exc_info=True)
+                await audit.edit(embed=embed)
+            except (discord.HTTPException, TimeoutError):
+                logger.warning("Say failure audit update failed in guild %s", interaction.guild_id)
+            await interaction.followup.send(
+                "Delivery uncertain. Check the target before retrying." if uncertain else "Discord rejected the message.",
+                ephemeral=True)
+            return
+        embed.set_footer(text=f"Sent | message {sent.id}")
+        try:
+            await audit.edit(embed=embed)
+        except (discord.HTTPException, TimeoutError):
+            logger.warning("Say sent but audit finalization failed in guild %s message %s", interaction.guild_id, sent.id)
+            await interaction.followup.send(f"Aura spoke in {target.mention}. The audit is still pending. Do not resend.", ephemeral=True)
+        else:
+            await interaction.followup.send(f"Aura spoke in {target.mention}", ephemeral=True)
 
-        await interaction.response.send_message(f"✅ Aura spoke in {target.mention}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Say(bot))

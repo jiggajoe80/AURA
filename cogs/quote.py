@@ -6,9 +6,18 @@ from discord.ext import commands
 DATA_FILE = Path(__file__).parent.parent / "data" / "quotes.json"
 
 def _load_quotes():
-    if DATA_FILE.exists():
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+    try:
+        rows = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        if isinstance(rows, list) and rows and all(
+            isinstance(row, dict) and isinstance(row.get("text"), str)
+            and isinstance(row.get("author", ""), str)
+            and isinstance(row.get("tags", []), list)
+            and all(isinstance(tag, str) for tag in row.get("tags", []))
+            for row in rows
+        ):
+            return rows
+    except (OSError, ValueError):
+        pass
     # fallback set
     return [{"text":"Luck favors the prepared.", "author":"AURA"}]
 

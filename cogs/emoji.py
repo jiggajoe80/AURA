@@ -39,43 +39,16 @@ class EmojiCog(commands.Cog):
         self.bot = bot
         self.log = logging.getLogger("Aura")
         # config state
-        self.config: Dict[str, dict] = {}
         self.default_pool_file: str = "POOL.GLOBAL.json"
         # runtime caches
         self._pool_cache: Dict[str, Tuple[float, Pool]] = {}  # pool_file -> (loaded_at, pool)
         self._usable_cache: Dict[Tuple[int, str], Tuple[float, List[str]]] = {}  # (guild_id, bucket) -> (t, list)
         # cooldowns
         self._chan_cool: Dict[int, float] = {}
-        self._user_cool: Dict[int, float] = {}
-
-        self._load_config()
-
-    # ---------- config & pools ----------
-
-    def _load_config(self) -> None:
-        """Load JSON config with an optional top-level 'default_pool_file'."""
-        try:
-            cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except Exception as e:
-            self.log.error("[emoji] failed to load config: %s", e, exc_info=True)
-            self.config = {}
-            return
-
-        self.default_pool_file = cfg.get("default_pool_file", self.default_pool_file)
-        self.config = {k: v for k, v in cfg.items() if k != "default_pool_file"}
-
-        self.log.info("[emoji] default_pool_file=%s", self.default_pool_file)
-        for gid, gc in self.config.items():
-            allow = len(gc.get("channels_allow", []))
-            deny = len(gc.get("channels_deny", []))
-            self.log.info(
-                "[emoji] cfg guild=%s enabled=%s allow=%d deny=%d",
-                gid, bool(gc.get("enabled")), allow, deny
-            )
+        self._user_cool: Dict[Tuple[int, int], float] = {}
 
     def _resolve_pool_file(self, guild_id: int) -> str:
-        gc = self.config.get(str(guild_id), {}) if self.config else {}
-        return (gc.get("pool_file") or self.default_pool_file or "POOL.GLOBAL.json").strip()
+        return self.default_pool_file
 
     def _load_pool(self, pool_file: str) -> Pool:
         """Load a pool JSON file with simple cache."""
@@ -137,7 +110,8 @@ class EmojiCog(commands.Cog):
     # ---------- public helpers used by diag ----------
 
     def get_guild_config(self, guild_id: int) -> dict:
-        return self.config.get(str(guild_id), {}) if self.config else {}
+        row = self.bot.settings.get(guild_id)
+        return {**row, "enabled": row["emoji_enabled"]}
 
     async def _audit_log(self, message: discord.Message, text: str) -> None:
         """Send a concise reaction record to this guild's configured log channel."""
@@ -195,7 +169,7 @@ class EmojiCog(commands.Cog):
         if _now() - last < ch_rate:
             return False
         # per-user
-        u_key = message.author.id
+        u_key = (message.guild.id, message.author.id)
         u_rate = int(gc.get("rate_user_seconds", 45))
         last_u = self._user_cool.get(u_key, 0.0)
         if _now() - last_u < u_rate:
@@ -204,16 +178,11 @@ class EmojiCog(commands.Cog):
 
     def _mark_cooldowns(self, message: discord.Message, gc: dict) -> None:
         self._chan_cool[message.channel.id] = _now()
-        self._user_cool[message.author.id] = _now()
+        self._user_cool[(message.guild.id, message.author.id)] = _now()
 
     def _channel_allowed(self, message: discord.Message, gc: dict) -> bool:
-        allow = gc.get("channels_allow") or []
-        deny = gc.get("channels_deny") or []
-        if allow and str(message.channel.id) not in allow:
-            return False
-        if deny and str(message.channel.id) in deny:
-            return False
-        return True
+        return (isinstance(message.channel, discord.TextChannel)
+                and str(message.channel.id) in gc["selected_channel_ids"])
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -296,7 +265,7 @@ class EmojiCog(commands.Cog):
         """Reload emoji config + clear caches."""
         self._pool_cache.clear()
         self._usable_cache.clear()
-        self._load_config()
+        await self.bot.settings.refresh()
         await ctx.reply("Emoji config reloaded.", mention_author=False)
 
     # ---------- Cog boilerplate ----------

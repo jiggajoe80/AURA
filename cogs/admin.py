@@ -1,154 +1,120 @@
+import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
-import json
-from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-AUTOPOST_MAP_FILE = DATA_DIR / "autopost_map.json"
-GUILD_FLAGS_FILE = DATA_DIR / "guild_flags.json"
+from guild_settings import SettingsError
 
-def _load_json(p: Path, default):
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return default
 
-def _save_json(p: Path, obj):
-    p.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+def guild_admin(callback):
+    callback = app_commands.checks.has_permissions(administrator=True)(callback)
+    callback = app_commands.default_permissions(administrator=True)(callback)
+    return app_commands.guild_only()(callback)
+
 
 class AdminCog(commands.Cog):
-    """Admin utilities: silent mode + autopost targets."""
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
 
-    def _get_maps(self):
-        return (
-            _load_json(AUTOPOST_MAP_FILE, {}),
-            _load_json(GUILD_FLAGS_FILE, {})
-        )
-
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.guild_only()
-    @app_commands.command(name="admin", description="Admin controls for Aura")
-    async def admin(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            "Use subcommands: "
-            "`/admin_silent on|off`, "
-            "`/admin_autopost_set #channel`, "
-            "`/admin_autopost_clear`, "
-            "`/admin_status`",
-            ephemeral=True
-        )
-
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.guild_only()
-    @app_commands.command(name="admin_status", description="Show this guild's Aura config")
-    async def admin_status(self, interaction: discord.Interaction):
-        ap_map, flags = self._get_maps()
-        gid = str(interaction.guild_id)
-
-        silent = flags.get(gid, {}).get("silent", False)
-        raw = ap_map.get(gid)
-
-        if raw is None:
-            ch_ids = []
-        elif isinstance(raw, str):
-            ch_ids = [raw]
-        elif isinstance(raw, list):
-            ch_ids = raw
+    async def _change(self, itx, edit, success):
+        await itx.response.defer(ephemeral=True)
+        try:
+            await self.bot.settings.update(itx.guild_id, edit)
+        except SettingsError as exc:
+            logging.getLogger("Aura").warning("Guild settings update %s: %s", itx.guild_id, exc)
+            await itx.followup.send("Settings change not confirmed. Check status before retrying.", ephemeral=True)
         else:
-            ch_ids = []
+            await itx.followup.send(success, ephemeral=True)
 
-        mentions = []
-        for cid in ch_ids:
-            ch = interaction.guild.get_channel(int(cid))
-            if ch:
-                mentions.append(ch.mention)
+    @app_commands.command(name="admin")
+    @guild_admin
+    async def admin(self, itx: discord.Interaction):
+        await itx.response.send_message(
+            "/admin_status, /admin_silent, /admin_autopost_set, /admin_autopost_remove, "
+            "/admin_autopost_clear, /admin_emoji, /admin_say_audit", ephemeral=True)
 
-        await interaction.response.send_message(
-            f"Guild: **{interaction.guild.name}**\n"
-            f"Silent: **{silent}**\n"
-            f"Autopost channels: **{', '.join(mentions) if mentions else 'not set'}**",
-            ephemeral=True
-        )
+    @app_commands.command(name="admin_status")
+    @guild_admin
+    async def status(self, itx: discord.Interaction):
+        row = self.bot.settings.get(itx.guild_id)
+        ids = ", ".join(row["selected_channel_ids"]) or "none"
+        await itx.response.send_message(
+            f"Settings: {'available' if self.bot.settings.available() else 'unavailable; safe defaults shown'}\n"
+            f"Silent: {row['silent']} | Emoji: {row['emoji_enabled']}\nSelected IDs: {ids}"
+            f"\nSay audit: {row['say_log_channel_id'] or 'unset'}", ephemeral=True)
 
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.guild_only()
-    @app_commands.command(name="admin_silent", description="Toggle silent mode for this guild")
-    @app_commands.describe(state="on or off")
-    async def admin_silent(self, interaction: discord.Interaction, state: str):
-        state = state.lower().strip()
-        if state not in ("on", "off"):
-            await interaction.response.send_message("Use `on` or `off`.", ephemeral=True)
+    @app_commands.command(name="admin_silent")
+    @guild_admin
+    async def silent(self, itx: discord.Interaction, state: str):
+        if state.lower().strip() not in ("on", "off"):
+            await itx.response.send_message("Use on or off.", ephemeral=True)
             return
+        await self._change(itx, lambda row: row.update(silent=state.lower().strip()=="on"), "Silent setting saved.")
 
-        _, flags = self._get_maps()
-        gid = str(interaction.guild_id)
-
-        flags.setdefault(gid, {})["silent"] = (state == "on")
-        _save_json(GUILD_FLAGS_FILE, flags)
-
-        await interaction.response.send_message(
-            f"Silent mode set to **{state}** for this guild.",
-            ephemeral=True
-        )
-
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.guild_only()
-    @app_commands.command(
-        name="admin_autopost_set",
-        description="Add a channel to the hourly autopost list"
-    )
-    @app_commands.describe(channel="Channel to add for hourly autoposts")
-    async def admin_autopost_set(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel,
-    ):
-        ap_map, _ = self._get_maps()
-        gid = str(interaction.guild_id)
-
-        raw = ap_map.get(gid)
-
-        if raw is None:
-            lst = []
-        elif isinstance(raw, str):
-            lst = [raw]
-        elif isinstance(raw, list):
-            lst = raw
-        else:
-            lst = []
-
+    @app_commands.command(name="admin_autopost_set")
+    @guild_admin
+    async def add_channel(self, itx: discord.Interaction, channel: discord.TextChannel):
+        if channel.guild.id != itx.guild_id:
+            await itx.response.send_message("Choose a channel in this server.", ephemeral=True)
+            return
         cid = str(channel.id)
+        def edit(row):
+            if cid not in row["selected_channel_ids"]:
+                row["selected_channel_ids"].append(cid)
+        await self._change(itx, edit, "Selected channels saved.")
 
-        if cid not in lst:
-            lst.append(cid)
-            ap_map[gid] = lst
-            _save_json(AUTOPOST_MAP_FILE, ap_map)
-            msg = f"Added autopost channel {channel.mention}."
+    @app_commands.command(name="admin_autopost_remove")
+    @guild_admin
+    async def remove_channel(self, itx: discord.Interaction, channel_id: str):
+        # Also supports removal of an unresolved channel shown by status.
+        def edit(row):
+            if channel_id in row["selected_channel_ids"]:
+                row["selected_channel_ids"].remove(channel_id)
+            else:
+                raise SettingsError("Channel ID is not selected in this guild")
+        await self._change(itx, edit, "Selected channel removed.")
+
+    @app_commands.command(name="admin_autopost_clear")
+    @guild_admin
+    async def clear_channels(self, itx: discord.Interaction):
+        expected = self.bot.settings.get(itx.guild_id)["selected_channel_ids"]
+        def edit(row):
+            if row["selected_channel_ids"] != expected:
+                raise SettingsError("Channel list changed since last read")
+            row["selected_channel_ids"] = []
+        await self._change(itx, edit, "Selected channels cleared.")
+
+    @app_commands.command(name="admin_emoji")
+    @guild_admin
+    async def emoji(self, itx: discord.Interaction, action: str):
+        if action == "status":
+            row = self.bot.settings.get(itx.guild_id)
+            await itx.response.send_message(
+                f"Emoji: {row['emoji_enabled']} | Selected IDs: {', '.join(row['selected_channel_ids']) or 'none'}",
+                ephemeral=True)
+        elif action in ("on", "off"):
+            await self._change(itx, lambda row: row.update(emoji_enabled=action=="on"), "Emoji setting saved.")
         else:
-            msg = f"{channel.mention} is already in the autopost list."
+            await itx.response.send_message("Use on, off or status.", ephemeral=True)
 
-        await interaction.response.send_message(msg, ephemeral=True)
+    @app_commands.command(name="admin_say_audit")
+    @guild_admin
+    async def say_audit(self, itx: discord.Interaction, action: str, channel: discord.TextChannel | None = None):
+        if action == "show":
+            value = self.bot.settings.get(itx.guild_id)["say_log_channel_id"]
+            await itx.response.send_message(f"Say audit: {value or 'unset'}", ephemeral=True)
+        elif action == "clear":
+            await self._change(itx, lambda row: row.update(say_log_channel_id=None), "Say audit destination cleared.")
+        elif action == "set" and channel and channel.guild.id == itx.guild_id:
+            perms = channel.permissions_for(itx.guild.me)
+            if not (perms.view_channel and perms.send_messages and perms.embed_links):
+                await itx.response.send_message("Aura needs View Channel, Send Messages, and Embed Links there.", ephemeral=True)
+                return
+            await self._change(itx, lambda row: row.update(say_log_channel_id=str(channel.id)), "Say audit destination saved.")
+        else:
+            await itx.response.send_message("Use show, clear, or set with a channel in this server.", ephemeral=True)
 
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.guild_only()
-    @app_commands.command(
-        name="admin_autopost_clear",
-        description="Clear all hourly autopost channels for this guild"
-    )
-    async def admin_autopost_clear(self, interaction: discord.Interaction):
-        ap_map, _ = self._get_maps()
-        gid = str(interaction.guild_id)
 
-        ap_map[gid] = []
-        _save_json(AUTOPOST_MAP_FILE, ap_map)
-
-        await interaction.response.send_message(
-            "All autopost channels cleared.",
-            ephemeral=True
-        )
-
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(AdminCog(bot))
