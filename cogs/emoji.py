@@ -139,8 +139,16 @@ class EmojiCog(commands.Cog):
     def get_guild_config(self, guild_id: int) -> dict:
         return self.config.get(str(guild_id), {}) if self.config else {}
 
-    async def _audit_log(self, message: discord.Message, text: str) -> None:
-        """Send a concise reaction record to this guild's configured log channel."""
+    async def _audit_log(
+        self,
+        message: discord.Message,
+        *,
+        bucket: BucketName,
+        status: str,
+        emoji: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> None:
+        """Send a readable emoji reaction record to the configured audit channel."""
         gc = self.get_guild_config(message.guild.id)
         raw_channel_id = gc.get("log_channel_id")
         if not raw_channel_id:
@@ -152,7 +160,48 @@ class EmojiCog(commands.Cog):
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
-            await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+
+            titles = {
+                "sprinkle": "✨ Aura sprinkled an emoji",
+                "skipped": "⚠️ Aura emoji skipped",
+                "error": "❌ Aura emoji error",
+            }
+            colors = {
+                "sprinkle": discord.Color.green(),
+                "skipped": discord.Color.orange(),
+                "error": discord.Color.red(),
+            }
+            embed = discord.Embed(
+                title=titles.get(status, "Aura emoji activity"),
+                color=colors.get(status, discord.Color.blurple()),
+                timestamp=discord.utils.utcnow(),
+            )
+            if emoji is not None:
+                embed.add_field(
+                    name="Emoji" if status == "sprinkle" else "Attempted emoji",
+                    value=emoji,
+                    inline=True,
+                )
+            embed.add_field(name="Channel", value=message.channel.mention, inline=True)
+            embed.add_field(name="On message by", value=message.author.mention, inline=True)
+            embed.add_field(
+                name="Trigger",
+                value="Member message" if bucket == "user_message" else "Bot message",
+                inline=True,
+            )
+            embed.add_field(name="Bucket", value=f"`{bucket}`", inline=True)
+            embed.add_field(
+                name="Original message",
+                value=f"[View message]({message.jump_url})",
+                inline=True,
+            )
+            if detail:
+                embed.add_field(name="Details", value=detail[:1024], inline=False)
+            embed.set_footer(
+                text=f"Guild: {message.guild.name} ({message.guild.id})"
+                     f" | Channel: {message.channel.id} | Message: {message.id}"
+            )
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         except Exception as e:
             self.log.warning(
                 "[emoji] audit log send failed guild=%s target=%s: %s",
@@ -270,22 +319,27 @@ class EmojiCog(commands.Cog):
             self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e, exc_info=True)
             await self._audit_log(
                 message,
-                f"[emoji] skipped: perms guild={message.guild.id} ch={message.channel.id} "
-                f"msg={message.id} bucket={bucket} (Add Reactions / External Emoji?)"
+                bucket=bucket,
+                status="skipped",
+                emoji=choice,
+                detail="Missing permission to add this reaction or use this emoji.",
             )
         except Exception as e:
             self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e, exc_info=True)
             await self._audit_log(
                 message,
-                f"[emoji] error guild={message.guild.id} ch={message.channel.id} "
-                f"msg={message.id} bucket={bucket} error={type(e).__name__}"
+                bucket=bucket,
+                status="error",
+                emoji=choice,
+                detail=f"Reaction failed: {type(e).__name__}. See server logs for details.",
             )
         else:
             if reacted:
                 await self._audit_log(
                     message,
-                    f"[emoji] sprinkle bucket={bucket} guild={message.guild.id} "
-                    f"ch={message.channel.id} msg={message.id} emoji={choice}"
+                    bucket=bucket,
+                    status="sprinkle",
+                    emoji=choice,
                 )
 
     # ---------- small admin utility ----------
