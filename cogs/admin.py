@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from guild_settings import SettingsError
+from guild_settings import SettingsError, valid_id
 
 
 def guild_admin(callback):
@@ -32,17 +32,39 @@ class AdminCog(commands.Cog):
     async def admin(self, itx: discord.Interaction):
         await itx.response.send_message(
             "/admin_status, /admin_silent, /admin_autopost_set, /admin_autopost_remove, "
-            "/admin_autopost_clear, /admin_emoji, /admin_say_audit", ephemeral=True)
+            "/admin_autopost_clear, /admin_emoji, /admin_say_audit. "
+            "Use /admin_autopost_remove_id for an unavailable channel.", ephemeral=True)
 
     @app_commands.command(name="admin_status")
     @guild_admin
     async def status(self, itx: discord.Interaction):
         row = self.bot.settings.get(itx.guild_id)
-        ids = ", ".join(row["selected_channel_ids"]) or "none"
-        await itx.response.send_message(
+        selected = [self._channel_label(itx.guild, value) for value in row["selected_channel_ids"]]
+        header = (
             f"Settings: {'available' if self.bot.settings.available() else 'unavailable; safe defaults shown'}\n"
-            f"Silent: {row['silent']} | Emoji: {row['emoji_enabled']}\nSelected IDs: {ids}"
-            f"\nSay audit: {row['say_log_channel_id'] or 'unset'}", ephemeral=True)
+            f"Silent: {'ON' if row['silent'] else 'OFF'} | Emoji: {'ON' if row['emoji_enabled'] else 'OFF'}\n"
+            f"Say audit: {self._channel_label(itx.guild, row['say_log_channel_id'])}\n"
+            f"Emoji audit: {self._channel_label(itx.guild, row['log_channel_id'])}\nSelected channels:"
+        )
+        options = {"ephemeral": True, "allowed_mentions": discord.AllowedMentions.none()}
+        pages = []
+        page = header
+        for label in selected or ["None"]:
+            if len(page) + len(label) + 1 > 1900:
+                pages.append(page)
+                page = "Selected channels (continued):"
+            page += "\n" + label
+        pages.append(page)
+        await itx.response.send_message(pages[0], **options)
+        for page in pages[1:]:
+            await itx.followup.send(page, **options)
+
+    @staticmethod
+    def _channel_label(guild, value):
+        if value is None:
+            return "Unset"
+        channel = guild.get_channel(int(value))
+        return channel.mention if channel else f"Unavailable channel ({value})"
 
     @app_commands.command(name="admin_silent")
     @guild_admin
@@ -66,8 +88,21 @@ class AdminCog(commands.Cog):
 
     @app_commands.command(name="admin_autopost_remove")
     @guild_admin
-    async def remove_channel(self, itx: discord.Interaction, channel_id: str):
-        # Also supports removal of an unresolved channel shown by status.
+    async def remove_channel(self, itx: discord.Interaction, channel: discord.TextChannel):
+        if channel.guild.id != itx.guild_id:
+            await itx.response.send_message("Choose a channel in this server.", ephemeral=True)
+            return
+        await self._remove_selected(itx, str(channel.id))
+
+    @app_commands.command(name="admin_autopost_remove_id", description="Remove an unavailable channel by its ID.")
+    @guild_admin
+    async def remove_channel_id(self, itx: discord.Interaction, channel_id: str):
+        if not valid_id(channel_id):
+            await itx.response.send_message("Enter a valid channel ID.", ephemeral=True)
+            return
+        await self._remove_selected(itx, channel_id)
+
+    async def _remove_selected(self, itx, channel_id):
         def edit(row):
             if channel_id in row["selected_channel_ids"]:
                 row["selected_channel_ids"].remove(channel_id)

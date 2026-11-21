@@ -6,12 +6,13 @@ import os
 import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import discord
 import main
 from cogs.emoji import EmojiCog
-from cogs.say import Say
+from cogs.admin import AdminCog
+from cogs.say import DeliveryRejected, Say, send_public_once
 from cogs.quote import _load_quotes
 from guild_settings import DEFAULT, Settings, SettingsError, validate
 
@@ -99,11 +100,13 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
             tree = main.bot.tree
             for name in ("emoji_diag_peek","emoji","quote","poll","admin_autopost_remove"):
                 self.assertIsNotNone(tree.get_command(name))
-            for name in ("admin_autopost_set","admin_autopost_remove","admin_autopost_clear","admin_emoji","admin_say_audit","admin_silent"):
+            for name in ("admin_autopost_set","admin_autopost_remove","admin_autopost_remove_id","admin_autopost_clear","admin_emoji","admin_say_audit","admin_silent"):
                 cmd = tree.get_command(name)
                 self.assertTrue(cmd.guild_only)
                 with self.assertRaises(discord.app_commands.MissingPermissions):
                     await cmd.checks[0](SimpleNamespace(permissions=discord.Permissions.none()))
+            for name in ("admin_autopost_set", "admin_autopost_remove"):
+                self.assertEqual(tree.get_command(name).parameters[0].type, discord.AppCommandOptionType.channel)
             capture = tree.get_command("emoji").get_command("capture_all")
             with self.assertRaises(discord.app_commands.MissingPermissions):
                 await capture.checks[0](SimpleNamespace(permissions=discord.Permissions.none()))
@@ -152,34 +155,111 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(cog._cooldowns_ok(first,cfg))
         self.assertTrue(cog._cooldowns_ok(other,cfg))
 
-    async def test_say_audit_first_and_failure(self):
-        guild=SimpleNamespace(id=1)
-        log=Mock(spec=discord.TextChannel)
-        target=Mock(spec=discord.TextChannel)
-        log.guild=target.guild=guild
-        log.id,target.id=20,21
-        target.mention="#test"
-        audit=SimpleNamespace(edit=AsyncMock(side_effect=TimeoutError))
-        order=[]
-        async def public(*args,**kwargs):
+    async def test_admin_changes_persist_and_status_resolves_channels(self):
+        store = Settings()
+        original = doc(**{"1": {"selected_channel_ids": ["11"], "say_log_channel_id": "20"},
+                          "2": {"selected_channel_ids": ["99"]}})
+        state = original
+        async def github(method, **kwargs):
+            nonlocal state
+            if method == "PUT":
+                state = json.loads(base64.b64decode(kwargs["payload"]["content"]))
+                return 200, None, b""
+            return file_response(state)
+        store.request = AsyncMock(side_effect=github)
+        channel = SimpleNamespace(id=12, guild=SimpleNamespace(id=1), mention="<#12>")
+        guild = SimpleNamespace(get_channel={12:channel, 20:SimpleNamespace(mention="<#20>")}.get)
+        itx = SimpleNamespace(guild_id=1, guild=guild,
+                              response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
+                              followup=SimpleNamespace(send=AsyncMock()))
+        cog = AdminCog(SimpleNamespace(settings=store))
+        await cog.add_channel.callback(cog, itx, channel)
+        restarted = Settings()
+        restarted.request = store.request
+        await restarted.refresh()
+        self.assertEqual(restarted.get(1)["selected_channel_ids"], ["11", "12"])
+        await cog.status.callback(cog, itx)
+        report = itx.response.send_message.await_args.args[0]
+        for value in ("<#12>", "Unavailable channel (11)", "<#20>", "Silent: ON", "Emoji: OFF"):
+            self.assertIn(value, report)
+        calls = store.request.await_count
+        await cog.remove_channel.callback(cog, itx, SimpleNamespace(id=99, guild=SimpleNamespace(id=2)))
+        self.assertEqual(store.request.await_count, calls)
+        await cog.remove_channel.callback(cog, itx, channel)
+        await cog.remove_channel_id.callback(cog, itx, "11")
+        self.assertEqual(state["guilds"]["1"]["selected_channel_ids"], [])
+        await cog.add_channel.callback(cog, itx, channel)
+        await cog.clear_channels.callback(cog, itx)
+        self.assertEqual(state["guilds"]["1"]["selected_channel_ids"], [])
+        self.assertEqual(state["guilds"]["2"], original["guilds"]["2"])
+
+    async def test_say_audit_first_mentions_and_delivery_outcomes(self):
+        guild = SimpleNamespace(id=1)
+        log, target = (Mock(spec=discord.TextChannel) for _ in range(2))
+        log.guild = target.guild = guild
+        log.id, target.id, target.mention = 20, 21, "<#21>"
+        audit = SimpleNamespace(edit=AsyncMock())
+        order = []
+        async def public(*args):
             order.append("public")
-            return SimpleNamespace(id=22)
-        async def pending(*args,**kwargs):
+            return 22
+        async def pending(**kwargs):
             order.append("pending")
+            self.assertEqual(kwargs["embed"].footer.text, "Pending delivery")
             return audit
-        log.send=AsyncMock(side_effect=pending)
-        target.send=AsyncMock(side_effect=public)
-        bot=SimpleNamespace(settings=SimpleNamespace(get=lambda _:{**DEFAULT,"say_log_channel_id":"20"}),get_channel=lambda _:log)
-        itx=SimpleNamespace(guild_id=1,channel=target,user=SimpleNamespace(mention="@member"),
-                            response=SimpleNamespace(defer=AsyncMock()),followup=SimpleNamespace(send=AsyncMock()))
-        cog=Say(bot)
-        await cog.say.callback(cog,itx,"test")
-        self.assertEqual(order,["pending","public"])
-        self.assertIn("Do not resend",itx.followup.send.await_args.args[0])
-        log.send.side_effect=TimeoutError
-        target.send.reset_mock()
-        await cog.say.callback(cog,itx,"test")
-        target.send.assert_not_awaited()
+        log.send = AsyncMock(side_effect=pending)
+        bot = SimpleNamespace(settings=SimpleNamespace(get=lambda _:{**DEFAULT,"say_log_channel_id":"20"}),
+                              get_channel=lambda _:log)
+        itx = SimpleNamespace(guild_id=1, channel=target, user=SimpleNamespace(mention="<@1>"),
+                              response=SimpleNamespace(defer=AsyncMock()), followup=SimpleNamespace(send=AsyncMock()))
+        cog = Say(bot)
+        body = "@everyone @here <@1> <@&2>"
+        send = AsyncMock(side_effect=public)
+        with patch.dict(cog.say.callback.__globals__, {"send_public_once": send}):
+            await cog.say.callback(cog, itx, body)
+            self.assertEqual(order, ["pending", "public"])
+            self.assertEqual(send.await_args.args[2], body)
+            for mentions in (send.await_args.args[3], log.send.await_args.kwargs["allowed_mentions"],
+                             audit.edit.await_args.kwargs["allowed_mentions"]):
+                self.assertEqual(mentions.to_dict(), {"parse": []})
+            self.assertEqual(audit.edit.await_args.kwargs["embed"].footer.text, "Sent | message 22")
+            for error, expected in [(DeliveryRejected, "rejected"), (TimeoutError, "uncertain")]:
+                send.reset_mock()
+                send.side_effect = error
+                await cog.say.callback(cog, itx, body)
+                send.assert_awaited_once()
+                self.assertIn(expected, itx.followup.send.await_args.args[0])
+            send.side_effect = public
+            audit.edit.side_effect = TimeoutError
+            await cog.say.callback(cog, itx, body)
+            self.assertIn("Do not resend", itx.followup.send.await_args.args[0])
+            send.reset_mock()
+            log.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "denied")
+            await cog.say.callback(cog, itx, body)
+            send.assert_not_awaited()
+
+    async def test_say_transport_posts_once_without_redirect_or_mentions(self):
+        session = AsyncMock()
+        session.post = MagicMock()
+        response = session.post.return_value.__aenter__.return_value
+        bot = SimpleNamespace(http=SimpleNamespace(token="fake", user_agent="test"))
+        target = SimpleNamespace(id=21)
+        with patch("cogs.say.aiohttp.ClientSession") as factory:
+            factory.return_value.__aenter__.return_value = session
+            for status in (403, 429, 503, 307, 200):
+                session.post.reset_mock()
+                response.status = status
+                response.json.return_value = {"id": "22"}
+                call = send_public_once(bot, target, "@everyone", discord.AllowedMentions.none())
+                if status == 200:
+                    self.assertEqual(await call, 22)
+                else:
+                    with self.assertRaises(DeliveryRejected if status < 500 and status >= 400 else ValueError):
+                        await call
+                session.post.assert_called_once()
+                self.assertFalse(session.post.call_args.kwargs["allow_redirects"])
+                self.assertEqual(session.post.call_args.kwargs["json"],
+                                 {"content": "@everyone", "allowed_mentions": {"parse": []}})
 
     async def test_quote_fallback(self):
         with patch("cogs.quote.DATA_FILE",SimpleNamespace(read_text=lambda **_:"[]")):
