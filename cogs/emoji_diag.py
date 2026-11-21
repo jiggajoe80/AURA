@@ -34,6 +34,9 @@ class EmojiDiag(commands.Cog):
     # ----- slash: zero-argument peek -----
 
     @app_commands.command(name="emoji_diag_peek", description="Show emoji config, pool file, and bucket samples.")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
     async def emoji_diag_peek(self, inter: discord.Interaction):
         eng = self._engine()
         guild = inter.guild
@@ -68,6 +71,9 @@ class EmojiDiag(commands.Cog):
     # ----- optional: bucket-only quick look with explicit name -----
 
     @app_commands.command(name="emoji_diag_bucket", description="Show counts + mixed sample for a specific bucket.")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
     @app_commands.describe(bucket="Bucket name: autopost, user_message, or event_soon")
     @app_commands.choices(bucket=[
         app_commands.Choice(name="autopost", value="autopost"),

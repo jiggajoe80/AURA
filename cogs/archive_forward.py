@@ -125,6 +125,9 @@ class ArchiveForward(commands.Cog):
         name="archiveforward",
         description="Forward a channel history to a destination via webhook (manual + confirmed).",
     )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
     @app_commands.describe(
         source_channel="Source channel",
         destination_webhook="Destination webhook URL",

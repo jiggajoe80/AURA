@@ -24,7 +24,10 @@ class EmojiIDs(commands.Cog):
         self.bot = bot
 
     # Slash command group: /emoji
-    group = app_commands.Group(name="emoji", description="Emoji tools")
+    group = app_commands.Group(
+        name="emoji", description="Emoji tools", guild_only=True,
+        default_permissions=discord.Permissions(administrator=True),
+    )
 
     # -------------------------------------------------------------------------
     # Shared helper: builds inline or file output from the guild's custom emojis
@@ -124,6 +127,7 @@ class EmojiIDs(commands.Cog):
             app_commands.Choice(name="csv (inline)", value="csv"),
         ]
     )
+    @app_commands.checks.has_permissions(administrator=True)
     async def ids(
         self,
         inter: discord.Interaction,
@@ -147,7 +151,7 @@ class EmojiIDs(commands.Cog):
             app_commands.Choice(name="txt (raw <:name:id>)", value="txt"),
         ]
     )
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def capture_all(
         self,
         inter: discord.Interaction,
@@ -173,7 +177,7 @@ class EmojiIDs(commands.Cog):
             app_commands.Choice(name="txt (raw <:name:id>)", value="txt"),
         ]
     )
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def capture_filter(
         self,
         inter: discord.Interaction,

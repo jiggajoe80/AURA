@@ -98,13 +98,37 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         try:
             self.assertEqual(len(main.bot.cogs), 15)
             tree = main.bot.tree
-            for name in ("emoji_diag_peek","emoji","quote","poll","admin_autopost_remove"):
-                self.assertIsNotNone(tree.get_command(name))
-            for name in ("admin_autopost_set","admin_autopost_remove","admin_autopost_remove_id","admin_autopost_clear","admin_emoji","admin_say_audit","admin_silent"):
-                cmd = tree.get_command(name)
-                self.assertTrue(cmd.guild_only)
-                with self.assertRaises(discord.app_commands.MissingPermissions):
-                    await cmd.checks[0](SimpleNamespace(permissions=discord.Permissions.none()))
+            public = {"event", "flip", "fortune", "joke", "poll", "profile", "quote", "say", "time"}
+            private = {
+                "admin", "admin_status", "admin_silent", "admin_autopost_set",
+                "admin_autopost_remove", "admin_autopost_remove_id", "admin_autopost_clear",
+                "admin_emoji", "admin_say_audit", "archiveforward", "emoji",
+                "emoji_diag_peek", "emoji_diag_bucket", "fortune_status",
+            }
+            commands = {command.name: command for command in tree.get_commands()}
+            self.assertEqual(set(commands), public | private)
+            self.assertIn("cogs.archive_forward", main.bot.extensions)
+            for name in public:
+                self.assertIsNone(commands[name].to_dict(tree)["default_member_permissions"])
+                self.assertFalse(commands[name].checks)
+            for name in private:
+                command = commands[name]
+                self.assertTrue(command.guild_only)
+                self.assertEqual(command.to_dict(tree)["default_member_permissions"],
+                                 discord.Permissions(administrator=True).value)
+
+            emoji = commands["emoji"]
+            children = {command.name: command for command in emoji.commands}
+            self.assertEqual(set(children), {"ids", "capture_all", "capture_filter"})
+            member = SimpleNamespace(permissions=discord.Permissions.none())
+            manager = SimpleNamespace(permissions=discord.Permissions(manage_guild=True))
+            administrator = SimpleNamespace(permissions=discord.Permissions(administrator=True))
+            for command in [commands[name] for name in private - {"emoji"}] + list(children.values()):
+                with self.subTest(command=command.qualified_name):
+                    for interaction in (member, manager):
+                        with self.assertRaises(discord.app_commands.MissingPermissions):
+                            await command._check_can_run(interaction)
+                    self.assertTrue(await command._check_can_run(administrator))
             for name in ("admin_autopost_set", "admin_autopost_remove"):
                 self.assertEqual(tree.get_command(name).parameters[0].type, discord.AppCommandOptionType.channel)
             capture = tree.get_command("emoji").get_command("capture_all")

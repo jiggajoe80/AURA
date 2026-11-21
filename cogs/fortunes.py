@@ -66,7 +66,9 @@ class FortunesCog(commands.Cog):
 
     # Admin diagnostic
     @app_commands.command(name="fortune_status", description="(Admin) Show fortune pool size.")
-    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
     async def fortune_status(self, interaction: discord.Interaction):
         await interaction.response.send_message(
             f"Fortunes loaded: **{len(self.fortunes)}**", ephemeral=True
