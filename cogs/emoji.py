@@ -219,6 +219,12 @@ class EmojiCog(commands.Cog):
             return
 
         choice = random.choice(usable)
+        # Reserve both cooldown keys before yielding to Discord.
+        channel_key = message.channel.id
+        user_key = (message.guild.id, message.author.id)
+        prior_channel = self._chan_cool.get(channel_key, 0.0)
+        prior_user = self._user_cool.get(user_key, 0.0)
+        self._mark_cooldowns(message, gc)
         reacted = False
         try:
             # add reaction
@@ -234,7 +240,8 @@ class EmojiCog(commands.Cog):
                 # unicode
                 await message.add_reaction(choice)
                 reacted = True
-            self._mark_cooldowns(message, gc)
+            if reacted:
+                self._mark_cooldowns(message, gc)
         except discord.Forbidden as e:
             self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e, exc_info=True)
             await self._audit_log(
@@ -256,6 +263,11 @@ class EmojiCog(commands.Cog):
                     f"[emoji] sprinkle bucket={bucket} guild={message.guild.id} "
                     f"ch={message.channel.id} msg={message.id} emoji={choice}"
                 )
+
+        finally:
+            if not reacted:
+                self._chan_cool[channel_key] = prior_channel
+                self._user_cool[user_key] = prior_user
 
     # ---------- small admin utility ----------
 
