@@ -20,13 +20,10 @@ logging.basicConfig(
 logger = logging.getLogger("Aura")
 
 INITIAL_EXTENSIONS = [
-    "cogs.admin",
     "cogs.auto_reply",
     "cogs.jokes",
     "cogs.events",
     "cogs.fortunes",
-    "cogs.say",
-    "cogs.emoji",
     "cogs.timezones",
     "cogs.flip",
     "cogs.profile",
@@ -140,8 +137,7 @@ async def on_ready():
     bot.guild_silent_state = {}
     bot.last_post_per_channel = {}
 
-    if not autopost_loop.is_running():
-        autopost_loop.start()
+    logging.getLogger("Aura").warning("Recovery mode: automatic posts, emoji and /say disabled")
 
 @bot.event
 async def on_message(message):
