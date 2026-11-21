@@ -115,8 +115,11 @@ class EmojiCog(commands.Cog):
         row = self.bot.settings.get(guild_id)
         return {**row, "enabled": row["emoji_enabled"]}
 
-    async def _audit_log(self, message: discord.Message, text: str) -> None:
-        """Send a concise reaction record to this guild's configured log channel."""
+    async def _audit_log(
+        self, message: discord.Message, *, bucket: BucketName, emoji: str,
+        title: str = "✨ Aura sprinkled an emoji", detail: Optional[str] = None,
+    ) -> None:
+        """Send a readable reaction record to the configured same-guild audit channel."""
         gc = self.get_guild_config(message.guild.id)
         raw_channel_id = gc.get("log_channel_id")
         if not raw_channel_id:
@@ -128,7 +131,33 @@ class EmojiCog(commands.Cog):
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
-            await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+            if getattr(getattr(channel, "guild", None), "id", None) != message.guild.id:
+                self.log.warning("[emoji] invalid audit channel guild=%s target=%s", message.guild.id, channel_id)
+                return
+
+            mentions = discord.AllowedMentions.none()
+            trigger = "Member message" if bucket == "user_message" else "Bot message"
+            emoji_label = "Attempted emoji" if detail else "Emoji"
+            description = (
+                f"**{emoji_label}:** {emoji}\n"
+                f"**Channel:** {message.channel.mention}\n"
+                f"**On message by:** {message.author.mention}\n"
+                f"**Trigger:** {trigger} · `{bucket}`\n"
+                f"[View original message]({message.jump_url})"
+            )
+            if detail:
+                description += f"\n**Details:** {detail}"
+            embed = discord.Embed(
+                title=title, description=description,
+                color=discord.Color.orange() if detail else discord.Color.green(),
+                timestamp=discord.utils.utcnow(),
+            )
+            footer = f"Guild {message.guild.id} · Channel {message.channel.id} · Message {message.id}"
+            embed.set_footer(text=footer)
+            try:
+                await channel.send(embed=embed, allowed_mentions=mentions)
+            except discord.Forbidden:
+                await channel.send(f"{title}\n{description}\n{footer}", allowed_mentions=mentions)
         except Exception as e:
             self.log.warning(
                 "[emoji] audit log send failed guild=%s target=%s: %s",
@@ -249,22 +278,20 @@ class EmojiCog(commands.Cog):
             self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e, exc_info=True)
             await self._audit_log(
                 message,
-                f"[emoji] skipped: perms guild={message.guild.id} ch={message.channel.id} "
-                f"msg={message.id} bucket={bucket} (Add Reactions / External Emoji?)"
+                bucket=bucket, emoji=choice, title="⚠️ Aura could not add an emoji",
+                detail="Discord denied the reaction. Check Add Reactions and external emoji access."
             )
         except Exception as e:
             self.log.warning("[emoji] react failed in %s with %s (%s)", bucket, pool_file, e, exc_info=True)
             await self._audit_log(
                 message,
-                f"[emoji] error guild={message.guild.id} ch={message.channel.id} "
-                f"msg={message.id} bucket={bucket} error={type(e).__name__}"
+                bucket=bucket, emoji=choice, title="❌ Aura emoji error",
+                detail=f"Reaction failed: {type(e).__name__}. See Render logs for details."
             )
         else:
             if reacted:
                 await self._audit_log(
-                    message,
-                    f"[emoji] sprinkle bucket={bucket} guild={message.guild.id} "
-                    f"ch={message.channel.id} msg={message.id} emoji={choice}"
+                    message, bucket=bucket, emoji=choice
                 )
 
         finally:
